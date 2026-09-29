@@ -63,8 +63,8 @@ Release bundle должен поставляться отдельно и сод�
 ## 1. Получение проекта
 
 ```sh
-git clone https://github.com/w4std/-_-_-.git dxaqc
-cd dxaqc
+git clone https://github.com/Ravlennn/fatboost-dxa-qc.git
+cd fatboost-dxa-qc
 ```
 
 Требования:
@@ -219,6 +219,31 @@ bundle должен быть установлен:
 Контейнер инференса запускается с `--network none`, двумя CPU, лимитом памяти,
 read-only filesystem в основном сценарии и временной директорией. Подробности:
 [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+### Передача готового Docker-образа
+
+Если целевая Linux x86_64 машина не имеет доступа к интернету или исходному
+репозиторию, образ можно собрать заранее и передать вместе с SHA-256:
+
+```sh
+DXAQC_IMAGE=dxaqc:release-amd64 ./scripts/build.sh --platform linux/amd64
+docker save dxaqc:release-amd64 -o dxaqc-release-amd64.tar
+sha256sum dxaqc-release-amd64.tar > dxaqc-release-amd64.tar.sha256
+```
+
+Пример инструкции для запуска переданного образа:
+
+```bash
+sha256sum dxaqc-release-amd64.tar
+docker load -i dxaqc-release-amd64.tar
+docker run --rm -p 127.0.0.1:8080:8080 \
+  --read-only --tmpfs /tmp:rw,nosuid,nodev,size=3g \
+  --cpus=2 --memory=4g \
+  dxaqc:release-amd64 serve --host 0.0.0.0 --port 8080
+```
+
+HTTP API публикуется только на `127.0.0.1:8080`, поэтому он недоступен извне
+без явного изменения настройки порта.
 
 ## 8. HTTP API
 

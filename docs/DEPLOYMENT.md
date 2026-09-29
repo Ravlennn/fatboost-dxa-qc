@@ -63,11 +63,38 @@ curl -H 'Content-Type: application/zip' --data-binary @studies.zip http://127.0.
 
 ## Готовый образ для сдачи
 
-Локально сохранён `outputs/dist/dxaqc-image-linux-amd64.tar` (образ `dxaqc:amd64`) с соседним SHA-256 файлом. В нём уже есть зависимости и выбранные веса; установка из сети не нужна:
+Для сдачи рекомендуется единое имя образа `dxaqc:release-amd64` и архива
+`dxaqc-release-amd64.tar`. В образ уже входят зависимости и отдельно
+установленный `models/release`; установка из сети на целевой машине не нужна.
+
+Сборка и экспорт на машине с интернетом:
 
 ```sh
-docker load -i outputs/dist/dxaqc-image-linux-amd64.tar
-DXAQC_IMAGE=dxaqc:amd64 ./scripts/run-copy.sh /absolute/studies.zip /absolute/out/new-result.csv
+DXAQC_IMAGE=dxaqc:release-amd64 ./scripts/build.sh --platform linux/amd64
+docker save dxaqc:release-amd64 -o dxaqc-release-amd64.tar
+sha256sum dxaqc-release-amd64.tar > dxaqc-release-amd64.tar.sha256
 ```
 
-Для Linux с работающими bind mounts можно использовать `run.sh` с тем же `DXAQC_IMAGE`. Для arm64 создан локальный образ `dxaqc:local`. Запуск x86_64 на Apple Silicon использует эмуляцию, поэтому его время нельзя переносить на целевую машину.
+Проверка и запуск HTTP API на целевой Linux x86_64 машине:
+
+```sh
+sha256sum -c dxaqc-release-amd64.tar.sha256
+docker load -i dxaqc-release-amd64.tar
+docker run --rm -p 127.0.0.1:8080:8080 \
+  --read-only --tmpfs /tmp:rw,nosuid,nodev,size=3g \
+  --cpus=2 --memory=4g \
+  dxaqc:release-amd64 serve --host 0.0.0.0 --port 8080
+```
+
+Порт контейнера слушает `0.0.0.0`, но наружу публикуется только на localhost
+хоста. Для пакетного CLI на Linux с работающими bind mounts используется тот же
+образ:
+
+```sh
+DXAQC_IMAGE=dxaqc:release-amd64 \
+  ./scripts/run.sh /absolute/studies.zip /absolute/out/result.csv
+```
+
+Для arm64 можно собрать локальный образ `dxaqc:local`. Запуск x86_64 на Apple
+Silicon использует эмуляцию, поэтому его время нельзя переносить на целевую
+машину.
