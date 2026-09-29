@@ -21,10 +21,10 @@ Python 3.12; фактические версии research-окружения ф�
 docker save dxaqc:local -o dxaqc-image.tar
 # На целевой машине:
 docker load -i dxaqc-image.tar
-./scripts/run.sh /absolute/data.zip /absolute/out/result.csv
+sh scripts/run.sh /absolute/data.zip /absolute/out/result.csv
 ```
 
-На Apple Silicon локальная сборка обычно arm64. Для x86_64 заранее собрать `./scripts/build.sh --platform linux/amd64`; архитектура образа должна совпадать с целевой машиной. Сборка и тест на одной архитектуре не являются тестом другой.
+На Apple Silicon локальная сборка обычно arm64. Для x86_64 заранее собрать `sh scripts/build.sh --platform linux/amd64`; архитектура образа должна совпадать с целевой машиной. Сборка и тест на одной архитектуре не являются тестом другой.
 
 ## DICOM и пакет
 
@@ -56,7 +56,7 @@ curl -H 'Content-Type: application/zip' --data-binary @studies.zip http://127.0.
 Для Docker context в VM без работающих bind mounts:
 
 ```sh
-./scripts/run-copy.sh /absolute/studies.zip /absolute/results/new-result.xlsx
+sh scripts/run-copy.sh /absolute/studies.zip /absolute/results/new-result.xlsx
 ```
 
 Скрипт копирует вход в отдельный локальный контейнер, запускает CLI без сети, возвращает отчёт/лог/сводку и удаляет контейнер. Исходный вход не изменяется. Выходные имена должны быть новыми, чтобы исключить перезапись исходных файлов. В этом варианте файловая система контейнера временная writable, все capabilities отключены; это отличается от read-only bind-варианта `run.sh`.
@@ -70,7 +70,7 @@ curl -H 'Content-Type: application/zip' --data-binary @studies.zip http://127.0.
 Сборка и экспорт на машине с интернетом:
 
 ```sh
-DXAQC_IMAGE=dxaqc:release-amd64 ./scripts/build.sh --platform linux/amd64
+DXAQC_IMAGE=dxaqc:release-amd64 sh scripts/build.sh --platform linux/amd64
 docker save dxaqc:release-amd64 -o dxaqc-release-amd64.tar
 sha256sum dxaqc-release-amd64.tar > dxaqc-release-amd64.tar.sha256
 ```
@@ -92,7 +92,7 @@ docker run --rm -p 127.0.0.1:8080:8080 \
 
 ```sh
 DXAQC_IMAGE=dxaqc:release-amd64 \
-  ./scripts/run.sh /absolute/studies.zip /absolute/out/result.csv
+  sh scripts/run.sh /absolute/studies.zip /absolute/out/result.csv
 ```
 
 Для arm64 можно собрать локальный образ `dxaqc:local`. Запуск x86_64 на Apple

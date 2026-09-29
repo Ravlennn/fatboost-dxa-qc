@@ -207,15 +207,15 @@ Docker image включает исходный код и `models/release/`, по
 bundle должен быть установлен:
 
 ```sh
-./scripts/build.sh
-./scripts/run.sh /absolute/studies.zip /absolute/results/result.csv
+sh scripts/build.sh
+sh scripts/run.sh /absolute/studies.zip /absolute/results/result.csv
 ```
 
 На Windows `.sh`-скрипты запускаются из Git Bash или WSL. Для Docker-сред без
 работающих bind mounts:
 
 ```sh
-./scripts/run-copy.sh /absolute/studies.zip /absolute/results/new-result.xlsx
+sh scripts/run-copy.sh /absolute/studies.zip /absolute/results/new-result.xlsx
 ```
 
 Контейнер инференса запускается с `--network none`, двумя CPU, лимитом памяти,
@@ -228,7 +228,7 @@ read-only filesystem в основном сценарии и временной 
 репозиторию, образ можно собрать заранее и передать вместе с SHA-256:
 
 ```sh
-DXAQC_IMAGE=dxaqc:release-amd64 ./scripts/build.sh --platform linux/amd64
+DXAQC_IMAGE=dxaqc:release-amd64 sh scripts/build.sh --platform linux/amd64
 docker save dxaqc:release-amd64 -o dxaqc-release-amd64.tar
 sha256sum dxaqc-release-amd64.tar > dxaqc-release-amd64.tar.sha256
 ```
