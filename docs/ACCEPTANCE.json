@@ -1,0 +1,72 @@
+{
+  "version": "0.1.0",
+  "branch": "main",
+  "python": "3.12.3",
+  "host": "macOS-15.7.4-arm64-arm-64bit",
+  "tests": {
+    "count": 35,
+    "sandbox_passed": 34,
+    "localhost_transport_passed_separately": 1
+  },
+  "model_manifest_sha256": "2a50197481ab6663afa09dd2fe7b05d031c11538ee2bee108f28cac41a386f01",
+  "model_bytes": 589937650,
+  "local_smoke": {
+    "files": 3,
+    "success": 3,
+    "failure": 0,
+    "skipped_non_dicom": 0,
+    "duplicates": 0,
+    "studies": 2,
+    "total_seconds": 8.954,
+    "success_rate": 1.0,
+    "max_study_seconds": 8.9032,
+    "wall_seconds_including_setup": 10.5888,
+    "predictor": "release",
+    "model_id": "dxaqc-development-2026-09-19",
+    "status": "complete"
+  },
+  "container_arm64_smoke": {
+    "files": 3,
+    "success": 3,
+    "failure": 0,
+    "skipped_non_dicom": 0,
+    "duplicates": 0,
+    "studies": 2,
+    "total_seconds": 3.373,
+    "success_rate": 1.0,
+    "max_study_seconds": 3.3079,
+    "wall_seconds_including_setup": 5.1389,
+    "predictor": "release",
+    "model_id": "dxaqc-development-2026-09-19",
+    "status": "complete"
+  },
+  "parity": {
+    "images": 150,
+    "probabilities": 450,
+    "max_abs_probability_difference": 2.384185791015625e-06,
+    "all_training_tensors_exact": true
+  },
+  "network_during_container_smoke": false,
+  "independent_clinical_test": false,
+  "source_spec_sha256": "12d7415f5f0eb1d26f3a9d1afa5a441c2a3d2722eea65c902c52e7519523f800",
+  "container_amd64_emulated_smoke": {
+    "files": 3,
+    "success": 3,
+    "failure": 0,
+    "skipped_non_dicom": 0,
+    "duplicates": 0,
+    "studies": 2,
+    "total_seconds": 381.899,
+    "success_rate": 1.0,
+    "max_study_seconds": 374.3458,
+    "wall_seconds_including_setup": 414.6605,
+    "predictor": "release",
+    "model_id": "dxaqc-development-2026-09-19",
+    "status": "complete"
+  },
+  "amd64_arm64_reports_identical_except_timing": true,
+  "docker_images": {
+    "arm64": "sha256:50f3b7f498bf5fde7489d7d84467adfd032164a3935062aabcb490dc9a786ded",
+    "amd64": "sha256:c477da3332bb901176cf0cab9525f12b0897f7b6462d355855a7abe63be41ece"
+  }
+}

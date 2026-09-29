@@ -1,0 +1,10 @@
+**
+!Dockerfile
+!requirements-runtime.txt
+!src/
+!src/**
+!models/
+!models/release/
+!models/release/**
+**/__pycache__/
+**/*.pyc

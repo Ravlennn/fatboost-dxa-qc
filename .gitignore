@@ -1,0 +1,20 @@
+# данные организатора и результаты — никогда в git
+data/
+outputs/
+# веса бэкбонов (225 МБ) — скачиваются скриптом; обученные маленькие модели (joblib) храним
+models/torch_home/
+models/*.pt
+models/*.pth
+# служебное
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.DS_Store
+models/hip_cnn/
+models/release*/
+tests/fixtures/
+
+# H100 kit: data archive built locally (medical data never goes to git)
+h100_kit/dist/
+h100_results_*.tar.gz
