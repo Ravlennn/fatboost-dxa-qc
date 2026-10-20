@@ -1,7 +1,7 @@
 """Anatomical landmark heatmap model (hip ROI / femoral neck, lumbar L1-L4).
 
 Trained on weak labels extracted from GE Lunar overlays (Arak, see
-docs/METHODS_AND_MODELS.md). Images use our DICOM convention: bone bright, uint8.
+README.md). Images use our DICOM convention: bone bright, uint8.
 Coordinates are (x, y) in the original image pixels.
 """
 from __future__ import annotations
@@ -132,7 +132,7 @@ class LandmarkPredictor:
 
 
 # ---------------------------------------------------------------- measurements
-MM_PER_PX = 0.6  # GE Lunar Prodigy render, docs/EDA.md
+MM_PER_PX = 0.6  # GE Lunar Prodigy render, README.md
 SPINE_SEQ = ('L1_top', 'L1L2', 'L2L3', 'L3L4', 'L4_bottom')
 TILT_SLOPE = 0.921  # measured vs applied rotation, scripts/calibrate_geometry.py (label-free)
 
@@ -156,7 +156,7 @@ def measurements(points: dict, region: str, shape, pixels: np.ndarray | None = N
         tilt = math.degrees(math.atan2(d[0], d[1]))
         return {'spine_tilt_deg': tilt,
                 # Display/DICOM SR value: synthetic-rotation calibration shows an 8% under-
-                # estimation (docs/METHODS_AND_MODELS.md). Heads keep using the raw value.
+                # estimation (README.md). Heads keep using the raw value.
                 'spine_tilt_deg_calibrated': tilt / TILT_SLOPE,
                 'spine_tilt_fit_deg': math.degrees(math.atan(fit[0])),
                 'spine_lateral_dev_px': float(np.abs(xs - np.polyval(fit, ys)).max()),
@@ -285,7 +285,7 @@ def iliac_features(pixels: np.ndarray, points: dict) -> dict:
         fr.append(float((win > thr).mean()) if win.size else 0.0)
     # Top of the lateral bone (iliac crest) relative to the L4 bottom, in vertebra heights.
     # Anchored at the BOTTOM: unlike the margin above L1, this does not move when the frame
-    # is cropped at the top (see docs/METHODS_AND_MODELS.md).
+    # is cropped at the top (see README.md).
     tops = []
     for a, b in ((x4 - 3.2 * vh, x4 - 1.0 * vh), (x4 + 1.0 * vh, x4 + 3.2 * vh)):
         a, b = int(np.clip(a, 0, w)), int(np.clip(b, 0, w))

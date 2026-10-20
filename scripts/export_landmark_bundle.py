@@ -1,7 +1,7 @@
 """Add the landmark model and landmark reason heads to a release bundle.
 
 Heads: spine_axis_tilt and spine_scan_range (landmark-only variant selected in
-docs/METHODS_AND_MODELS.md). Refit on all labelled spine images; threshold = midpoint of
+README.md). Refit on all labelled spine images; threshold = midpoint of
 adjacent pooled-OOF scores at the F1-optimal partition (optimistic, like the
 release hip thresholds).
 
@@ -70,7 +70,7 @@ def main():
     (dst / 'heads.json').write_text(json.dumps({
         **{k: old[k] for k in ('hip_heads', 'spine_artifact_head') if k in old},  # keep export_lt_bundle.py heads
         'heads': heads, 'spine_quality_policy': old.get('spine_quality_policy', 'or'),
-        'source': 'scripts/run_landmark_fusion.py; docs/METHODS_AND_MODELS.md',
+        'source': 'scripts/run_landmark_fusion.py; README.md',
         'checkpoint_sha256': sha256(dst / 'landmarks_v1.pt')}, indent=2))
     backup = args.bundle / 'manifest.pre_landmarks.json'
     if not backup.exists():

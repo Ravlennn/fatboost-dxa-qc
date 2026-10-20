@@ -1,0 +1,572 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Разметка ориентиров DXA</title>
+<style>
+:root {
+  --bg: #121417; --panel: #1b1e23; --raised: #23272e; --line: #333943; --text: #eceae4; --text-2: #b3b9c1;
+  --text-3: #858c95; --accent: #f2c14e; --accent-ink: #1a1405; --ok: #7cc79b; --ok-bg: #1f3a2b; --todo: #f2c14e;
+  --todo-bg: #3a3218; --absent: #a8afb8; --absent-bg: #2b2f36; --bad: #ef8a74;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+  font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif; }
+button, select, textarea, input { font: inherit; color: inherit; }
+button { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 7px 12px; cursor: pointer;
+  transition: border-color 120ms ease, background-color 120ms ease, transform 100ms ease; }
+button:hover { border-color: #4b525d; }
+button:active { transform: scale(0.97); }
+button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); font-weight: 600; }
+button.primary:hover { background: #f6cd6a; }
+button:disabled { opacity: .45; cursor: default; transform: none; }
+kbd { font: 12px/1 ui-monospace, Menlo, monospace; padding: 2px 5px; border: 1px solid var(--line); border-bottom-width: 2px;
+  border-radius: 4px; color: var(--text-2); background: var(--bg); }
+.app { display: grid; grid-template-rows: auto 1fr; height: 100%; }
+header { display: flex; align-items: center; gap: 16px; padding: 10px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
+header h1 { font-size: 16px; margin: 0; font-weight: 600; white-space: nowrap; }
+header .who { color: var(--text-3); font-size: 13px; white-space: nowrap; }
+.progress { flex: 1; display: flex; align-items: center; gap: 10px; min-width: 160px; }
+.bar { flex: 1; height: 8px; background: var(--raised); border-radius: 4px; overflow: hidden; }
+.bar > span { display: block; height: 100%; width: 0; background: var(--ok); transition: width 240ms ease; }
+.progress b { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.saved { font-size: 12px; color: var(--text-3); white-space: nowrap; }
+main { display: grid; grid-template-columns: 1fr 380px; min-height: 0; }
+.stage { position: relative; min-width: 0; min-height: 0; background: #08090b; }
+canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+.stage .hud { position: absolute; left: 12px; bottom: 12px; display: flex; gap: 6px; align-items: center;
+  background: rgba(27,30,35,.92); border: 1px solid var(--line); border-radius: 10px; padding: 6px 8px; font-size: 13px; }
+.stage .hud label { display: flex; align-items: center; gap: 6px; color: var(--text-2); }
+.stage .hud input[type=range] { width: 90px; accent-color: var(--accent); }
+aside { border-left: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+.sec { padding: 14px 16px; border-bottom: 1px solid var(--line); }
+.imgnav { display: flex; align-items: center; gap: 8px; }
+.imgnav h2 { margin: 0; font-size: 20px; font-variant-numeric: tabular-nums; }
+.imgnav .sub { color: var(--text-3); font-size: 13px; }
+.imgnav .spacer { flex: 1; }
+.imgnav select { background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 6px; max-width: 150px; }
+.done-badge { display: none; margin-top: 10px; padding: 8px 10px; border-radius: 8px; background: var(--ok-bg); color: var(--ok); font-size: 14px; }
+.done-badge.on { display: block; }
+.points { list-style: none; margin: 0; padding: 6px 8px; overflow-y: auto; }
+.pt { display: grid; grid-template-columns: 18px 20px 1fr auto; gap: 8px; align-items: center; padding: 7px 8px;
+  border-radius: 8px; cursor: pointer; border: 1px solid transparent; }
+.pt:hover { background: var(--raised); }
+.pt.sel { background: var(--raised); border-color: var(--accent); }
+.pt .dot { width: 12px; height: 12px; border-radius: 50%; }
+.pt .num { color: var(--text-3); font: 12px ui-monospace, Menlo, monospace; }
+.pt .name { font-size: 14px; }
+.chip { font-size: 12px; padding: 2px 8px; border-radius: 99px; white-space: nowrap; }
+.chip.todo { background: var(--todo-bg); color: var(--todo); }
+.chip.ok { background: var(--ok-bg); color: var(--ok); }
+.chip.absent { background: var(--absent-bg); color: var(--absent); }
+.card { background: var(--raised); border-radius: 10px; padding: 12px; }
+.card h3 { margin: 0 0 4px; font-size: 15px; }
+.card p { margin: 0 0 10px; color: var(--text-2); font-size: 14px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; }
+.row > button { flex: 1; }
+.flags label { display: flex; align-items: center; gap: 8px; margin: 4px 0; cursor: pointer; }
+.flags input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+.flags select, .flags textarea { width: 100%; background: var(--raised); border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
+.flags textarea { resize: vertical; min-height: 54px; margin-top: 6px; }
+.grow { flex: 1; min-height: 0; overflow-y: auto; }
+.foot { padding: 12px 16px; border-top: 1px solid var(--line); display: flex; gap: 8px; }
+.foot button { flex: 1; }
+.modal { position: fixed; inset: 0; background: rgba(5,6,8,.72); display: none; align-items: center; justify-content: center; z-index: 10; }
+.modal.on { display: flex; }
+.modal .box { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 22px 24px; width: min(620px, 92vw);
+  max-height: 88vh; overflow-y: auto; }
+.modal h2 { margin: 0 0 8px; font-size: 20px; }
+.modal p, .modal li { color: var(--text-2); }
+.modal input[type=text] { width: 100%; padding: 9px 11px; border-radius: 8px; border: 1px solid var(--line); background: var(--raised); margin: 6px 0 14px; }
+.keys { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; font-size: 14px; margin: 10px 0; }
+.toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); opacity: 0; background: var(--raised);
+  border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; transition: opacity 180ms ease, transform 180ms ease; z-index: 20; }
+.toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 id="title">Разметка ориентиров DXA</h1>
+    <span class="who" id="who"></span>
+    <div class="progress"><div class="bar"><span id="bar"></span></div><b id="count">0 из 0</b></div>
+    <span class="saved" id="savedAt"></span>
+    <button id="helpBtn" title="Краткая инструкция и клавиши">Справка</button>
+    <button id="openBtn" title="Продолжить работу из сохранённого файла">Открыть файл</button>
+    <button id="saveBtn" class="primary" title="Скачать файл с результатом (Ctrl+S)">Сохранить результат</button>
+    <input type="file" id="fileIn" accept=".json,application/json" hidden>
+  </header>
+  <main>
+    <div class="stage" id="stage">
+      <canvas id="cv"></canvas>
+      <div class="hud">
+        <button id="zoomOut" title="Уменьшить (−)">−</button>
+        <button id="zoomIn" title="Увеличить (+)">+</button>
+        <button id="fitBtn" title="Вписать снимок (F)">Вписать</button>
+        <label>Яркость <input type="range" id="bri" min="50" max="200" value="100"></label>
+        <label>Контраст <input type="range" id="con" min="50" max="250" value="100"></label>
+        <button id="resetImg" title="Сбросить яркость и контраст">Сброс</button>
+        <button id="labelsBtn" title="Подписи точек (L)">Подписи</button>
+      </div>
+    </div>
+    <aside>
+      <div class="sec">
+        <div class="imgnav">
+          <button id="prevBtn" title="Предыдущий снимок ( [ )">‹</button>
+          <div><h2 id="imgId"></h2><div class="sub" id="imgSub"></div></div>
+          <button id="nextBtn" title="Следующий снимок ( ] )">›</button>
+          <span class="spacer"></span>
+          <select id="jump" title="Перейти к снимку"></select>
+        </div>
+        <div class="done-badge" id="doneBadge">Снимок размечен. <kbd>Enter</kbd> — следующий неразмеченный.</div>
+      </div>
+      <div class="grow">
+        <ul class="points" id="points"></ul>
+        <div class="sec">
+          <div class="card" id="ptCard">
+            <h3 id="ptName"></h3>
+            <p id="ptHint"></p>
+            <div class="row">
+              <button class="primary" id="okBtn">Подтвердить <kbd>Enter</kbd></button>
+              <button id="absentBtn">Нет на снимке <kbd>N</kbd></button>
+            </div>
+          </div>
+        </div>
+        <div class="sec flags">
+          <label><input type="checkbox" id="doubt"> Сомневаюсь в разметке этого снимка <kbd>D</kbd></label>
+          <label><input type="checkbox" id="unusable"> Снимок нельзя разметить</label>
+          <select id="reason" hidden>
+            <option value="prosthesis">Эндопротез или металлоконструкция</option>
+            <option value="wrong_region">Не та область или проекция</option>
+            <option value="unreadable">Изображение нечитаемо</option>
+            <option value="other">Другое (напишите в комментарии)</option>
+          </select>
+          <textarea id="comment" placeholder="Комментарий (необязательно)"></textarea>
+        </div>
+      </div>
+      <div class="foot">
+        <button id="undoBtn" title="Отменить последнее действие (Ctrl+Z)">Отменить</button>
+        <button id="nextTodoBtn" class="primary">Следующий неразмеченный</button>
+      </div>
+    </aside>
+  </main>
+</div>
+
+<div class="modal" id="nameModal"><div class="box">
+  <h2 id="welcomeTitle">Разметка ориентиров DXA</h2>
+  <p id="welcomeText"></p>
+  <p>Введите фамилию и инициалы — они попадут в имя файла с результатом.</p>
+  <input type="text" id="nameIn" placeholder="Например: Иванова А. С." autocomplete="name">
+  <div class="row"><button class="primary" id="startBtn">Начать</button></div>
+</div></div>
+
+<div class="modal" id="helpModal"><div class="box">
+  <h2>Как работать</h2>
+  <ol>
+    <li>Точки уже стоят там, где их нашла модель. <b>Проверьте каждую</b>: перетащите на правильное место или подтвердите, если она стоит верно.</li>
+    <li>Щелчок по пустому месту переносит туда выбранную точку.</li>
+    <li>Если структуры нет в кадре или её не видно — нажмите «Нет на снимке».</li>
+    <li>Снимок готов, когда у всех точек статус «Подтверждена» или «Нет на снимке».</li>
+    <li>Работа сохраняется в браузере автоматически. Когда закончите (или хотя бы раз в день) нажмите <b>«Сохранить результат»</b> и пришлите файл.</li>
+  </ol>
+  <div class="keys">
+    <kbd>Enter</kbd><span>подтвердить точку и перейти к следующей; на готовом снимке — следующий снимок</span>
+    <kbd>N</kbd><span>нет на снимке</span>
+    <kbd>1–8</kbd><span>выбрать точку по номеру; <kbd>Tab</kbd> — следующая точка</span>
+    <kbd>← → ↑ ↓</kbd><span>сдвинуть точку (с <kbd>Shift</kbd> — сильнее)</span>
+    <kbd>Колесо мыши</kbd><span>увеличение; перетаскивание правой кнопкой или с зажатым пробелом — сдвиг снимка</span>
+    <kbd>F</kbd><span>вписать снимок в окно</span>
+    <kbd>[ ]</kbd><span>предыдущий / следующий снимок</span>
+    <kbd>D</kbd><span>отметить «сомневаюсь»</span>
+    <kbd>Ctrl+Z</kbd><span>отменить; <kbd>Ctrl+S</kbd> — сохранить результат</span>
+  </div>
+  <p>Подробно, с образцами — в файле «Инструкция.pdf».</p>
+  <div class="row"><button class="primary" id="helpClose">Понятно</button></div>
+</div></div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const DATA = /*DATA*/null;
+(() => {
+'use strict';
+const $ = (id) => document.getElementById(id);
+const P = DATA.points;                       // [{key, short, name, hint, color}]
+const KEYS = P.map((p) => p.key);
+const STORE = 'dxaqc-labels:' + DATA.package + ':' + DATA.part;
+const LINKS = DATA.kind === 'spine'
+  ? [['th12_mid', 'L1_top', true], ['L1_top', 'L1L2'], ['L1L2', 'L2L3'], ['L2L3', 'L3L4'], ['L3L4', 'L4_bottom']]
+  : [['head_center', 'neck_center'], ['lt_base_top', 'lt_apex'], ['lt_apex', 'lt_base_bottom']];
+
+// ---------- state ----------
+let state = { doctor: '', items: {}, fileSavedAt: null, dirtySinceFile: false };
+const blank = (it) => ({ pts: JSON.parse(JSON.stringify(it.init)), st: Object.fromEntries(KEYS.map((k) => [k, 'todo'])),
+  moved: Object.fromEntries(KEYS.map((k) => [k, false])), doubt: false, unusable: false, reason: 'prosthesis', comment: '',
+  seconds: 0, updated: null });
+for (const it of DATA.items) state.items[it.id] = blank(it);
+try {
+  const saved = JSON.parse(localStorage.getItem(STORE) || 'null');
+  if (saved && saved.items) {
+    state.doctor = saved.doctor || '';
+    state.fileSavedAt = saved.fileSavedAt || null;
+    state.dirtySinceFile = !!saved.dirtySinceFile;
+    for (const id in saved.items) if (state.items[id]) state.items[id] = Object.assign(state.items[id], saved.items[id]);
+  }
+} catch (e) { /* private mode or blocked storage: work still possible, the file is the record */ }
+
+let cur = 0;                  // index in DATA.items
+let sel = KEYS[0];
+let showLabels = true;
+let undo = {};                // id -> stack of snapshots
+const images = {};
+const view = { s: 1, ox: 0, oy: 0 };
+let shownAt = performance.now();
+
+const item = () => DATA.items[cur];
+const S = () => state.items[item().id];
+const complete = (s) => s.unusable || KEYS.every((k) => s.st[k] !== 'todo');
+
+let saveTimer = null;
+function persist() {
+  state.dirtySinceFile = true;
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* see above */ }
+  }, 300);
+}
+function snapshot() {
+  const id = item().id;
+  (undo[id] = undo[id] || []).push(JSON.stringify(S()));
+  if (undo[id].length > 100) undo[id].shift();
+}
+function touch() { S().updated = new Date().toISOString(); persist(); renderSide(); draw(); }
+
+// ---------- canvas ----------
+const cv = $('cv'), ctx = cv.getContext('2d');
+function resize() {
+  const r = cv.getBoundingClientRect(), d = window.devicePixelRatio || 1;
+  cv.width = Math.round(r.width * d); cv.height = Math.round(r.height * d);
+  ctx.setTransform(d, 0, 0, d, 0, 0);
+  draw();
+}
+function fit() {
+  const r = cv.getBoundingClientRect(), it = item();
+  view.s = Math.min((r.width - 40) / it.width, (r.height - 90) / it.height);
+  view.ox = (r.width - it.width * view.s) / 2; view.oy = (r.height - it.height * view.s) / 2 - 10;
+  draw();
+}
+const toScreen = ([x, y]) => [view.ox + x * view.s, view.oy + y * view.s];
+const toImage = (sx, sy) => [(sx - view.ox) / view.s, (sy - view.oy) / view.s];
+
+function draw() {
+  const r = cv.getBoundingClientRect();
+  ctx.clearRect(0, 0, r.width, r.height);
+  const it = item(), s = S(), img = images[it.id];
+  if (!img || !img.complete) return;
+  ctx.save();
+  ctx.imageSmoothingEnabled = true;
+  ctx.filter = `brightness(${$('bri').value}%) contrast(${$('con').value}%)`;
+  ctx.drawImage(img, view.ox, view.oy, it.width * view.s, it.height * view.s);
+  ctx.restore();
+  ctx.strokeStyle = 'rgba(255,255,255,.18)'; ctx.lineWidth = 1;
+  ctx.strokeRect(view.ox - .5, view.oy - .5, it.width * view.s + 1, it.height * view.s + 1);
+  if (s.unusable) return;
+  for (const [a, b, dashed] of LINKS) {
+    if (s.st[a] === 'absent' || s.st[b] === 'absent') continue;
+    const [x1, y1] = toScreen(s.pts[a]), [x2, y2] = toScreen(s.pts[b]);
+    ctx.save(); ctx.setLineDash(dashed ? [5, 5] : []); ctx.strokeStyle = 'rgba(140,210,255,.55)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); ctx.restore();
+  }
+  for (const p of P) {
+    if (s.st[p.key] === 'absent') continue;
+    const [x, y] = toScreen(s.pts[p.key]), isSel = p.key === sel, st = s.st[p.key];
+    ctx.save();
+    if (isSel) { ctx.beginPath(); ctx.arc(x, y, 13, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2; ctx.stroke(); }
+    ctx.beginPath(); ctx.arc(x, y, isSel ? 7 : 6, 0, 7);
+    if (st === 'ok') { ctx.fillStyle = p.color; ctx.fill(); ctx.strokeStyle = '#0b0c0e'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    else { ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.fill(); ctx.setLineDash([3, 2]); ctx.strokeStyle = p.color; ctx.lineWidth = 2.5; ctx.stroke(); }
+    ctx.restore();
+    if (showLabels || isSel) {
+      const t = p.short + (st === 'todo' ? ' ?' : '');
+      ctx.font = '600 12px system-ui, sans-serif';
+      const w = ctx.measureText(t).width;
+      ctx.fillStyle = 'rgba(10,11,13,.78)'; ctx.fillRect(x + 11, y - 9, w + 8, 18);
+      ctx.fillStyle = st === 'todo' ? '#f2c14e' : '#eceae4'; ctx.fillText(t, x + 15, y + 4);
+    }
+  }
+}
+
+// ---------- side panel ----------
+function renderHeader() {
+  const done = DATA.items.filter((it) => complete(state.items[it.id])).length, n = DATA.items.length;
+  $('count').textContent = `Готово ${done} из ${n}`;
+  $('bar').style.width = (100 * done / n) + '%';
+  $('who').textContent = state.doctor ? `Врач: ${state.doctor}` : '';
+  $('savedAt').textContent = state.fileSavedAt
+    ? 'Файл сохранён ' + new Date(state.fileSavedAt).toLocaleString('ru-RU', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : 'Файл ещё не сохранялся';
+}
+function renderJump() {
+  const sel_ = $('jump');
+  sel_.innerHTML = DATA.items.map((it, i) =>
+    `<option value="${i}">${complete(state.items[it.id]) ? '✓ ' : '· '}${it.id}</option>`).join('');
+  sel_.value = String(cur);
+}
+function renderSide() {
+  const it = item(), s = S();
+  $('imgId').textContent = it.id;
+  $('imgSub').textContent = `${it.label} · ${cur + 1} из ${DATA.items.length}`;
+  $('points').innerHTML = P.map((p, i) => {
+    const st = s.unusable ? 'absent' : s.st[p.key];
+    const txt = { todo: 'Проверить', ok: 'Подтверждена', absent: s.unusable ? '—' : 'Нет на снимке' }[st];
+    return `<li class="pt${p.key === sel ? ' sel' : ''}" data-k="${p.key}"><span class="dot" style="background:${p.color}"></span>` +
+      `<span class="num">${i + 1}</span><span class="name">${p.name}</span><span class="chip ${st}">${txt}</span></li>`;
+  }).join('');
+  const p = P.find((q) => q.key === sel);
+  $('ptName').textContent = p.name;
+  $('ptHint').textContent = p.hint;
+  $('okBtn').disabled = $('absentBtn').disabled = s.unusable;
+  $('absentBtn').innerHTML = (s.st[sel] === 'absent' ? 'Вернуть точку' : 'Нет на снимке') + ' <kbd>N</kbd>';
+  $('doubt').checked = s.doubt; $('unusable').checked = s.unusable; $('reason').hidden = !s.unusable; $('reason').value = s.reason;
+  if (document.activeElement !== $('comment')) $('comment').value = s.comment;
+  $('doneBadge').classList.toggle('on', complete(s));
+  if (s.unusable) { $('ptName').textContent = 'Снимок отмечен как непригодный'; $('ptHint').textContent = 'Точки на нём не нужны. Снимите отметку, если ошиблись.'; }
+  renderHeader(); renderJump();
+}
+
+// ---------- navigation ----------
+function leaveItem() {
+  const dt = (performance.now() - shownAt) / 1000;
+  if (document.visibilityState === 'visible') S().seconds = Math.round((S().seconds || 0) + Math.min(dt, 300));
+}
+function show(i) {
+  leaveItem();
+  cur = (i + DATA.items.length) % DATA.items.length;
+  const s = S();
+  sel = KEYS.find((k) => s.st[k] === 'todo') || KEYS[0];
+  shownAt = performance.now();
+  const it = item();
+  if (!images[it.id]) { const im = new Image(); im.onload = () => { fit(); }; im.src = it.img; images[it.id] = im; }
+  renderSide();
+  fit();
+}
+function nextTodoImage() {
+  for (let j = 1; j <= DATA.items.length; j++) {
+    const i = (cur + j) % DATA.items.length;
+    if (!complete(state.items[DATA.items[i].id])) return show(i);
+  }
+  toast('Все снимки размечены. Нажмите «Сохранить результат» и пришлите файл.');
+}
+function selectNextTodo() {
+  const s = S(), start = KEYS.indexOf(sel);
+  for (let j = 1; j <= KEYS.length; j++) {
+    const k = KEYS[(start + j) % KEYS.length];
+    if (s.st[k] === 'todo') { sel = k; return true; }
+  }
+  return false;
+}
+
+// ---------- actions ----------
+function confirmPoint() {
+  const s = S(); if (s.unusable) return;
+  if (complete(s)) return nextTodoImage();
+  if (s.st[sel] === 'absent') { selectNextTodo(); return touch(); }   // Enter never brings an absent point back
+  snapshot(); s.st[sel] = 'ok'; selectNextTodo(); touch();
+}
+function toggleAbsent() {
+  const s = S(); if (s.unusable) return;
+  snapshot();
+  if (s.st[sel] === 'absent') { s.st[sel] = 'todo'; touch(); return; }
+  s.st[sel] = 'absent';
+  // The three trochanter points come and go together: no protrusion means none of them exists.
+  if (sel.startsWith('lt_')) for (const k of KEYS) if (k.startsWith('lt_')) s.st[k] = 'absent';
+  selectNextTodo(); touch();
+}
+function undoLast() {
+  const st = undo[item().id];
+  if (!st || !st.length) return toast('Нечего отменять');
+  state.items[item().id] = JSON.parse(st.pop()); touch();
+}
+function nudge(dx, dy) {
+  const s = S(); if (s.unusable || s.st[sel] === 'absent') return;
+  snapshot(); const p = s.pts[sel];
+  s.pts[sel] = [p[0] + dx, p[1] + dy]; s.st[sel] = 'ok'; s.moved[sel] = true; touch();
+}
+
+// ---------- pointer ----------
+let drag = null, spaceDown = false;
+function hit(sx, sy) {
+  const s = S(); if (s.unusable) return null;
+  let best = null, bd = 15;
+  for (const k of KEYS) {
+    if (s.st[k] === 'absent') continue;
+    const [x, y] = toScreen(s.pts[k]), d = Math.hypot(x - sx, y - sy);
+    if (d < bd) { bd = d; best = k; }
+  }
+  return best;
+}
+function local(e) { const r = cv.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; }
+cv.addEventListener('contextmenu', (e) => e.preventDefault());
+cv.addEventListener('pointerdown', (e) => {
+  const [sx, sy] = local(e);
+  cv.setPointerCapture(e.pointerId);
+  if (e.button !== 0 || spaceDown) { drag = { pan: true, sx, sy, ox: view.ox, oy: view.oy }; cv.style.cursor = 'grabbing'; return; }
+  const s = S(); if (s.unusable) return;
+  const k = hit(sx, sy);
+  snapshot();
+  if (k) { sel = k; }
+  else {
+    if (s.st[sel] === 'absent') { undo[item().id].pop(); return toast('Точка отмечена «Нет на снимке». Нажмите N, чтобы вернуть её.'); }
+    s.pts[sel] = toImage(sx, sy).map((v, i) => Math.max(0, Math.min(v, (i ? item().height : item().width) - 1)));
+    s.st[sel] = 'ok'; s.moved[sel] = true;
+  }
+  drag = { key: sel, sx, sy, moved: !k };
+  renderSide(); draw();
+});
+cv.addEventListener('pointermove', (e) => {
+  const [sx, sy] = local(e);
+  if (!drag) { cv.style.cursor = hit(sx, sy) ? 'grab' : (spaceDown ? 'grab' : 'crosshair'); return; }
+  if (drag.pan) { view.ox = drag.ox + sx - drag.sx; view.oy = drag.oy + sy - drag.sy; draw(); return; }
+  if (Math.hypot(sx - drag.sx, sy - drag.sy) < 2 && !drag.moved) return;
+  const s = S(), it = item(), [x, y] = toImage(sx, sy);
+  s.pts[drag.key] = [Math.max(0, Math.min(x, it.width - 1)), Math.max(0, Math.min(y, it.height - 1))];
+  s.st[drag.key] = 'ok'; s.moved[drag.key] = true; drag.moved = true; draw();
+});
+cv.addEventListener('pointerup', () => {
+  if (drag && !drag.pan) {
+    if (drag.moved) touch();
+    else undo[item().id].pop();   // a plain click on a point only selects it
+  }
+  drag = null; cv.style.cursor = 'crosshair';
+});
+cv.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const [sx, sy] = local(e), k = Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015));
+  const ns = Math.max(0.5, Math.min(view.s * k, 40));
+  view.ox = sx - (sx - view.ox) * ns / view.s; view.oy = sy - (sy - view.oy) * ns / view.s; view.s = ns; draw();
+}, { passive: false });
+function zoomBy(k) {
+  const r = cv.getBoundingClientRect(), sx = r.width / 2, sy = r.height / 2, ns = Math.max(0.5, Math.min(view.s * k, 40));
+  view.ox = sx - (sx - view.ox) * ns / view.s; view.oy = sy - (sy - view.oy) * ns / view.s; view.s = ns; draw();
+}
+
+// ---------- keyboard ----------
+document.addEventListener('keydown', (e) => {
+  const typing = ['TEXTAREA', 'INPUT', 'SELECT'].includes(document.activeElement.tagName) && document.activeElement.type !== 'checkbox'
+    && document.activeElement.type !== 'range';
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') { e.preventDefault(); return exportFile(); }
+  if (typing || $('nameModal').classList.contains('on')) return;
+  if ($('helpModal').classList.contains('on')) {   // a key that closes the help must not also confirm a point
+    if (e.key === 'Enter' || e.key === 'Escape') { e.preventDefault(); $('helpModal').classList.remove('on'); }
+    return;
+  }
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') { e.preventDefault(); return undoLast(); }
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  const step = e.shiftKey ? 3 : 0.5;
+  const k = e.key;
+  if (k === ' ') { spaceDown = true; e.preventDefault(); return; }
+  if (k === 'Enter') { e.preventDefault(); return confirmPoint(); }
+  if (k === 'n' || k === 'N' || k === 'т' || k === 'Т') return toggleAbsent();
+  if (k === 'd' || k === 'D' || k === 'в' || k === 'В') { snapshot(); S().doubt = !S().doubt; return touch(); }
+  if (k === 'f' || k === 'F' || k === 'а' || k === 'А') return fit();
+  if (k === 'l' || k === 'L' || k === 'д' || k === 'Д') { showLabels = !showLabels; return draw(); }
+  if (k === '+' || k === '=') return zoomBy(1.25);
+  if (k === '-' || k === '_') return zoomBy(0.8);
+  if (k === '[' || k === 'х' || k === 'PageUp') { e.preventDefault(); return show(cur - 1); }
+  if (k === ']' || k === 'ъ' || k === 'PageDown') { e.preventDefault(); return show(cur + 1); }
+  if (k === 'Tab') { e.preventDefault(); sel = KEYS[(KEYS.indexOf(sel) + (e.shiftKey ? KEYS.length - 1 : 1)) % KEYS.length]; renderSide(); return draw(); }
+  if (/^[1-9]$/.test(k) && +k <= KEYS.length) { sel = KEYS[+k - 1]; renderSide(); return draw(); }
+  const arrows = { ArrowLeft: [-step, 0], ArrowRight: [step, 0], ArrowUp: [0, -step], ArrowDown: [0, step] };
+  if (arrows[k]) { e.preventDefault(); return nudge(...arrows[k]); }
+});
+document.addEventListener('keyup', (e) => { if (e.key === ' ') spaceDown = false; });
+
+// ---------- file ----------
+function exportFile() {
+  leaveItem(); shownAt = performance.now();
+  if (!state.doctor) { $('nameModal').classList.add('on'); return toast('Сначала введите фамилию'); }
+  const out = {
+    format: 'dxaqc-landmarks-v1', package: DATA.package, part: DATA.part, kind: DATA.kind, doctor: state.doctor,
+    exported_at: new Date().toISOString(), user_agent: navigator.userAgent,
+    items: DATA.items.map((it) => {
+      const s = state.items[it.id];
+      return { id: it.id, complete: complete(s), unusable: s.unusable, reason: s.unusable ? s.reason : null,
+        doubt: s.doubt, comment: s.comment, seconds: s.seconds, updated: s.updated,
+        points: Object.fromEntries(KEYS.map((k) => [k, { x: +s.pts[k][0].toFixed(2), y: +s.pts[k][1].toFixed(2),
+          status: s.unusable ? 'absent' : s.st[k], moved: !!s.moved[k] }])) };
+    }),
+  };
+  const surname = state.doctor.split(/\s+/)[0].replace(/[^\p{L}\p{N}-]+/gu, '') || 'врач';
+  const blob = new Blob([JSON.stringify(out, null, 1)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `разметка_${DATA.part}_${surname}.json`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  state.fileSavedAt = new Date().toISOString(); state.dirtySinceFile = false;
+  try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) { /* the downloaded file is the record */ }
+  renderHeader();
+  toast(`Файл «${a.download}» сохранён в папку загрузок`);
+}
+function importFile(file) {
+  const fr = new FileReader();
+  fr.onload = () => {
+    let d;
+    try { d = JSON.parse(fr.result); } catch (e) { return toast('Это не файл разметки'); }
+    if (d.format !== 'dxaqc-landmarks-v1' || d.part !== DATA.part) return toast('Файл от другой части разметки — откройте его в своём файле');
+    for (const r of d.items) {
+      if (!state.items[r.id]) continue;
+      const s = state.items[r.id];
+      for (const k of KEYS) if (r.points[k]) { s.pts[k] = [r.points[k].x, r.points[k].y]; s.st[k] = r.points[k].status; s.moved[k] = !!r.points[k].moved; }
+      Object.assign(s, { doubt: !!r.doubt, unusable: !!r.unusable, reason: r.reason || 'prosthesis', comment: r.comment || '',
+        seconds: r.seconds || 0, updated: r.updated || null });
+    }
+    if (d.doctor && !state.doctor) state.doctor = d.doctor;
+    persist(); show(cur); toast('Разметка загружена из файла');
+  };
+  fr.readAsText(file);
+}
+
+let toastTimer = null;
+function toast(t) { const el = $('toast'); el.textContent = t; el.classList.add('on'); clearTimeout(toastTimer); toastTimer = setTimeout(() => el.classList.remove('on'), 3200); }
+
+// ---------- wiring ----------
+$('title').textContent = DATA.title;
+$('welcomeTitle').textContent = DATA.title;
+$('welcomeText').textContent = DATA.welcome;
+$('okBtn').onclick = confirmPoint; $('absentBtn').onclick = toggleAbsent; $('undoBtn').onclick = undoLast;
+$('prevBtn').onclick = () => show(cur - 1); $('nextBtn').onclick = () => show(cur + 1); $('nextTodoBtn').onclick = nextTodoImage;
+$('jump').onchange = (e) => show(+e.target.value);
+$('fitBtn').onclick = fit; $('zoomIn').onclick = () => zoomBy(1.25); $('zoomOut').onclick = () => zoomBy(0.8);
+$('bri').oninput = $('con').oninput = draw;
+$('resetImg').onclick = () => { $('bri').value = 100; $('con').value = 100; draw(); };
+$('labelsBtn').onclick = () => { showLabels = !showLabels; draw(); };
+$('points').onclick = (e) => { const li = e.target.closest('.pt'); if (li) { sel = li.dataset.k; renderSide(); draw(); } };
+$('doubt').onchange = (e) => { snapshot(); S().doubt = e.target.checked; touch(); };
+$('unusable').onchange = (e) => { snapshot(); S().unusable = e.target.checked; touch(); };
+$('reason').onchange = (e) => { S().reason = e.target.value; touch(); };
+$('comment').oninput = (e) => { S().comment = e.target.value; S().updated = new Date().toISOString(); persist(); };
+$('saveBtn').onclick = exportFile; $('openBtn').onclick = () => $('fileIn').click();
+$('fileIn').onchange = (e) => { if (e.target.files[0]) importFile(e.target.files[0]); e.target.value = ''; };
+$('helpBtn').onclick = () => $('helpModal').classList.add('on'); $('helpClose').onclick = () => $('helpModal').classList.remove('on');
+$('startBtn').onclick = () => {
+  const v = $('nameIn').value.trim();
+  if (v.length < 3) return toast('Введите фамилию и инициалы');
+  state.doctor = v; persist(); $('nameModal').classList.remove('on'); renderHeader();
+  if (!localStorage.getItem(STORE + ':helped')) { $('helpModal').classList.add('on'); try { localStorage.setItem(STORE + ':helped', '1'); } catch (e) {} }
+};
+$('nameIn').addEventListener('keydown', (e) => { if (e.key === 'Enter') $('startBtn').click(); });
+window.addEventListener('resize', resize);
+window.addEventListener('beforeunload', (e) => { leaveItem(); try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (_) {} });
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'hidden') leaveItem(); else shownAt = performance.now(); });
+
+if (!state.doctor) $('nameModal').classList.add('on'), setTimeout(() => $('nameIn').focus(), 50);
+else toast('Продолжаем с того места, где остановились');
+const firstTodo = DATA.items.findIndex((it) => !complete(state.items[it.id]));
+resize();
+show(firstTodo < 0 ? 0 : firstTodo);
+})();
+</script>
+</body>
+</html>

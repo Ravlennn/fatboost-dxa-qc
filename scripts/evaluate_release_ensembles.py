@@ -293,6 +293,7 @@ def evaluate(root: Path, output: Path, n_boot: int, seed: int):
              "Воспроизведение: `.venv/bin/python scripts/evaluate_release_ensembles.py --bootstrap 1000 --seed 1729`. CPU-пулы ограничены двумя потоками; обучение не выполняется.", ""]
     report = "\n".join(rows)
     (output / "report.md").write_text(report)
+    (root / "outputs/release_ensemble_v1/report.md").write_text(report)
     print(json.dumps({"selected": selected, "thresholds": thresholds, "mean_fold_ap": selection["selected_mean_fold_ap"], "maximum_mean_fold_ap": best_ap, "output": str(output)}, ensure_ascii=False, indent=2))
 
 

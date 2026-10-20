@@ -1,12 +1,17 @@
-"""Final development validation of the shipped decision rule (TZ 8.4 / 4), one protocol.
+"""Exploratory development evaluation of the decision rule (TZ 8.4 / 4).
 
-Every decision is made by components fitted WITHOUT the evaluated fold:
+This is NOT fully nested validation: global supervised CNN OOF scores are reused
+as features and for threshold/policy selection. Their outer-training rows can
+depend on the current outer fold's labels through the original base models.
+Passing study groups to threshold callbacks does not remove this stacking leakage.
+The implemented component protocol is:
   * outer folds = release study folds (5); CNN scores are the release OOF;
   * landmark/LT heads: logistic regression refit on the outer-train part;
   * every threshold (CNN or head) is the F1-optimal threshold on outer-train
     predictions (inner 3 study-grouped folds for heads, OOF of other folds for CNN).
-Rule reproduced exactly as in the CLI:
-  spine: defect = CNN quality OR landmark axis OR landmark scan-range; artifact from CNN
+Decision structure for after_v2 (deployment thresholds are fitted separately):
+  spine: select CNN OR reasons versus reasons-only using existing OOF decisions;
+         reasons = landmark axis, landmark scan-range, CNN + artifact detector
   hip:   defect = fusion(CNN, lesser trochanter) quality; rotation = fusion; ROI = CNN
   reasons are reported only for defects; defect without reason -> quality_unspecified.
 Continuous score of a composite decision = max over its components of score/threshold
@@ -18,6 +23,7 @@ Also evaluates the previous CNN-only release with the same protocol ("before").
 """
 from __future__ import annotations
 
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -34,11 +40,27 @@ import run_landmark_fusion as F  # noqa: E402
 from dxaqc.lesser_trochanter import head_features  # noqa: E402
 
 OUT = ROOT / 'outputs/final_validation_v1'
-# Threshold strategy used by the nested heads; scripts/eval_threshold_policy.py swaps it.
-THRESHOLD = {'fn': lambda y, sc: F.best_threshold(y, sc), 'name': 'argmax_f1'}
+PROTOCOL_STATUS = 'EXPLORATORY_GLOBAL_OOF_NOT_FULLY_NESTED'
+PROTOCOL_LIMITATION = (
+    'Global supervised CNN OOF scores are reused in head, threshold and policy selection; '
+    'study-grouped threshold resampling does not remove stacking leakage. '
+    'Results are exploratory development estimates, not an independent test.'
+)
+# Threshold strategy used by the nested heads.
+THRESHOLD = {'fn': lambda y, sc, groups=None: F.best_threshold(y, sc), 'name': 'argmax_f1'}
 REASONS = {'spine_scan_range': 'v_layout', 'spine_axis_tilt': 'v_axis', 'spine_artifact': 'v_artifact',
            'hip_positioning': 'v_rotation', 'hip_roi_margins': 'v_roi'}
 B = 2000
+
+
+def select_threshold(y, score, groups=None):
+    """Pass training studies to group-aware strategies; retain legacy two-arg callbacks."""
+    fn = THRESHOLD['fn']
+    try:
+        inspect.signature(fn).bind(y, score, groups=groups)
+    except TypeError:
+        return fn(y, score)
+    return fn(y, score, groups=groups)
 
 
 def nested_head(X, cols, y, g, fo):
@@ -50,16 +72,18 @@ def nested_head(X, cols, y, g, fo):
         inner = np.zeros(tr.sum())
         for a, b in GroupKFold(3).split(Xtr, ytr, g[tr]):
             inner[b] = F.model().fit(Xtr[a], ytr[a]).predict_proba(Xtr[b])[:, 1] if ytr[a].any() else 0
-        thr[te] = THRESHOLD['fn'](ytr, inner)
+        thr[te] = select_threshold(ytr, inner, g[tr])
         s[te] = F.model().fit(Xtr, ytr).predict_proba(X.loc[te, cols].values)[:, 1]
     return s, thr
 
 
-def nested_raw(score, y, fo):
+def nested_raw(score, y, fo, groups=None):
+    """Threshold existing global OOF; the underlying predictions are not re-nested."""
+    groups = None if groups is None else np.asarray(groups)
     thr = np.zeros(len(y))
     for f in np.unique(fo):
         tr = fo != f
-        thr[fo == f] = THRESHOLD['fn'](y[tr], score[tr])
+        thr[fo == f] = select_threshold(y[tr], score[tr], None if groups is None else groups[tr])
     return score, thr
 
 
@@ -82,9 +106,9 @@ def build():
     y = lambda col: d[col].astype(int).values
     g, fo = d.study.values, d.fold.values
     X = F.features(d)
-    put('spine_quality_cnn', sp, *nested_raw(d.p_quality.values, y('quality'), fo))
+    put('spine_quality_cnn', sp, *nested_raw(d.p_quality.values, y('quality'), fo, g))
     for code in ('spine_scan_range', 'spine_axis_tilt', 'spine_artifact'):
-        put(code + '_cnn', sp, *nested_raw(d['p_' + code].values, y(REASONS[code]), fo))
+        put(code + '_cnn', sp, *nested_raw(d['p_' + code].values, y(REASONS[code]), fo, g))
     put('spine_axis_tilt_lm', sp, *nested_head(X, F.TASKS['spine_axis_tilt'][3], y('v_axis'), g, fo))
     put('spine_scan_range_lm', sp, *nested_head(X, F.TASKS['spine_scan_range_iliac'][3], y('v_layout'), g, fo))
     art = json.load(open(ROOT / 'outputs/artifacts_lm_v1/measurements.json'))
@@ -100,16 +124,17 @@ def build():
     feats = ['cnn', 'lt_prom', 'lt_prom_sq', 'lt_area', 'lt_edge_bump']
     for name, lab, pcol in (('hip_quality', 'quality', 'p_quality'), ('hip_positioning', 'v_rotation', 'p_hip_positioning')):
         yy = d[lab].astype(int).values
-        put(name + '_cnn', hp, *nested_raw(d[pcol].values, yy, fo))
+        put(name + '_cnn', hp, *nested_raw(d[pcol].values, yy, fo, g))
         Xd = Xh.copy()
         Xd['cnn'] = F.logit(d[pcol].values)
         put(name + '_fusion', hp, *nested_head(Xd, feats, yy, g, fo))
-    put('hip_roi_margins_cnn', hp, *nested_raw(d.p_hip_roi_margins.values, d.v_roi.astype(int).values, fo))
+    put('hip_roi_margins_cnn', hp, *nested_raw(d.p_hip_roi_margins.values, d.v_roi.astype(int).values, fo, g))
     return df, comp
 
 
 def spine_policy_nested(df, comp, r):
-    """Spine defect policy chosen INSIDE each outer fold by F1 on the outer-train rows:
+    """Exploratory policy choice on outer-train rows of existing global OOF decisions.
+    These scores and thresholds can depend on the current outer fold's labels.
     'or'      = CNN quality OR landmark axis OR scan range (OR artifact fusion);
     'reasons' = defect only if a reason is found (axis | scan | artifact fusion)."""
     sp = df.region.eq('spine').values
@@ -177,14 +202,21 @@ def all_metrics(t):
     res = {}
     for name, m in (('quality_all', slice(None)), ('quality_spine', t.region.eq('spine')), ('quality_hip', t.region.str.startswith('hip'))):
         u = t[m]
-        res[name] = binary(u.y_quality, u.quality_class == 1, u.score_quality)
+        if len(u):  # a single-region table (e.g. the hip-only nested run) has no spine slice
+            res[name] = binary(u.y_quality, u.quality_class == 1, u.score_quality)
     f1s = []
     for c in REASONS:
+        if 'score_' + c not in t:
+            continue
         u = t[t['score_' + c].notna() & t['y_' + c].notna()]
+        if not len(u):
+            continue
         res[c] = binary(u['y_' + c], u['reported_' + c], u['score_' + c])
         f1s.append(res[c]['f1'])
-    res['reasons_macro_f1'] = {'value': float(np.mean(f1s))}
-    res['quality_unspecified_among_defects'] = {'value': float(t.quality_unspecified.sum() / max(t.quality_class.sum(), 1))}
+    if f1s:
+        res['reasons_macro_f1'] = {'value': float(np.mean(f1s))}
+    if 'quality_unspecified' in t:
+        res['quality_unspecified_among_defects'] = {'value': float(t.quality_unspecified.sum() / max(t.quality_class.sum(), 1))}
     return res
 
 
@@ -229,6 +261,7 @@ def processing_stats():
 
 
 def main():
+    print(f'Protocol: {PROTOCOL_STATUS}. {PROTOCOL_LIMITATION}', flush=True)
     OUT.mkdir(parents=True, exist_ok=True)
     df, comp = build()
     rng = np.random.default_rng(0)
@@ -246,7 +279,10 @@ def main():
     router = {'correct': int((lab.region == lab.region_prediction).sum()), 'n': int(len(lab))}
     proc = processing_stats()
     final = 'after_v2'
-    (OUT / 'metrics.json').write_text(json.dumps({'protocol': __doc__, 'metrics': res, 'final_version': final,
+    (OUT / 'metrics.json').write_text(json.dumps({'protocol': __doc__, 'protocol_status': PROTOCOL_STATUS,
+                                                  'protocol_limitation': PROTOCOL_LIMITATION,
+                                                  'threshold_strategy': THRESHOLD['name'],
+                                                  'metrics': res, 'final_version': final,
                                                   'spine_policy_per_fold': policies, 'router_labelled': router,
                                                   'processing_cli_run': proc}, indent=2, ensure_ascii=False))
     A = res[final]

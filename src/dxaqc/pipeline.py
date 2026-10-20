@@ -8,9 +8,13 @@ from pathlib import Path
 from .dicom_io import DicomImage, find_dicom_files, read_dicom, study_key
 from .predictor import BasePredictor, Prediction
 from .region import classify_region
-from .report import CODES, make_row, check_report
+from .report import CODES, make_row, check_report, quality_prob, type_probs
 
 log = logging.getLogger(__name__)
+
+NON_DICOM_SUFFIXES = {'.xlsx', '.xls', '.xlsm', '.csv', '.tsv', '.txt', '.md', '.pdf', '.doc', '.docx', '.rtf',
+                      '.json', '.xml', '.html', '.htm', '.log', '.png', '.jpg', '.jpeg', '.bmp', '.gif', '.tif',
+                      '.tiff', '.zip', '.rar', '.7z', '.py', '.sh', '.yaml', '.yml', '.ini'}
 
 
 def _rel(path: Path, root: Path) -> str:
@@ -44,21 +48,45 @@ def process_image(img: DicomImage, predictor: BasePredictor, cache: dict[str, tu
 
 
 def process_folder(root: Path, predictor: BasePredictor, *, path_mode: str = "file", exclude: tuple[Path, ...] = (),
-                   overlay_dir: Path | None = None) -> tuple[list[dict], dict]:
-    """Возвращает строки отчёта и сводку. path_mode: 'file' — путь к файлу, 'dir' — папка исследования."""
+                   overlay_dir: Path | None = None, on_result=None, on_start=None,
+                   sr_dir: Path | None = None) -> tuple[list[dict], dict]:
+    """Возвращает строки отчёта и сводку. path_mode: 'file' — путь к файлу, 'dir' — папка исследования.
+
+    on_start(paths) получает относительные пути всех файлов до обработки;
+    on_result(index, total, row, img, region, pred) вызывается после каждого файла (для прогресса в
+    веб-интерфейсе); img/region/pred — None, если файл не прочитан. Ошибка колбэка не влияет на отчёт.
+    """
     root = Path(root)
     excluded = {p.resolve() for p in exclude}
-    files = [p for p in find_dicom_files(root) if p.resolve() not in excluded]
-    if len(files) > 10000:
-        raise ValueError('Batch exceeds 10000 files')
+    found = [p for p in find_dicom_files(root) if p.resolve() not in excluded]
+    # documents and pictures that ship next to the studies (e.g. a label spreadsheet) are not
+    # images: they are logged and counted, not reported as failed rows
+    files = [p for p in found if p.suffix.lower() not in NON_DICOM_SUFFIXES]
+    non_dicom = [p for p in found if p.suffix.lower() in NON_DICOM_SUFFIXES]
+    for p in non_dicom:
+        log.info("skip non-DICOM file %s", _rel(p, root))
     if not files:
         log.warning("входная папка пуста: %s", root)
     rows: list[dict] = []
     cache: dict[str, tuple[str, Prediction]] = {}
-    stats = {"files": len(files), "success": 0, "failure": 0, "skipped_non_dicom": 0, "duplicates": 0, "studies": set(),
-             "overlays": 0, "overlay_failures": 0}
+    stats = {"files": len(files), "success": 0, "failure": 0, "skipped_non_dicom": len(non_dicom), "duplicates": 0, "studies": set(),
+             "overlays": 0, "overlay_failures": 0, "sr": 0, "sr_failures": 0}
     t_all = time.perf_counter()
-    for f in files:
+    if on_start is not None:
+        try:
+            on_start([_rel(f, root) for f in files])
+        except Exception:  # noqa: BLE001
+            log.exception("start callback failed")
+
+    def notify(i, img=None, region=None, pred=None):
+        if on_result is None:
+            return
+        try:
+            on_result(i, len(files), rows[-1], img, region, pred)
+        except Exception:  # noqa: BLE001 — a progress listener must never break the batch
+            log.exception("progress callback failed")
+
+    for i, f in enumerate(files):
         t0 = time.perf_counter()
         rel_file = _rel(f, root)
         try:
@@ -68,6 +96,7 @@ def process_folder(root: Path, predictor: BasePredictor, *, path_mode: str = "fi
             log.warning("FAIL read %s: %s", rel_file, msg)
             stats["failure"] += 1
             rows.append(make_row(path_to_study=rel_file, status="Failure", seconds=time.perf_counter() - t0, error=msg))
+            notify(i)
             continue
         skey = study_key(img, root)
         stats["studies"].add(skey)
@@ -80,6 +109,8 @@ def process_folder(root: Path, predictor: BasePredictor, *, path_mode: str = "fi
                 log.warning("%s: %s", rel_file, "; ".join(img.warnings))
             sc = {"score_" + c: v for c, v in pred.scores.items() if c in CODES}
             sc["quality_score"] = pred.scores.get("quality", pred.scores.get("hip_quality", max(sc.values()) if sc else float(pred.quality_class)))
+            sc["quality_prob"] = quality_prob(sc["quality_score"], pred.details.get("quality_threshold", 0.5), int(pred.quality_class))
+            sc.update(type_probs(pred.scores, pred.details.get("reason_thresholds", {}), list(pred.violations), region))
             row = make_row(
                 path_to_study=p2s, study_uid=img.study_uid, image_uid=img.sop_uid, anatomical_region=region,
                 quality_class=int(pred.quality_class), violation_type=";".join(pred.violations),
@@ -96,14 +127,25 @@ def process_folder(root: Path, predictor: BasePredictor, *, path_mode: str = "fi
                 except Exception as oe:  # noqa: BLE001 — visualisation must never fail the row
                     stats["overlay_failures"] += 1
                     log.warning("overlay failed %s: %s", rel_file, oe)
+            if sr_dir is not None:
+                try:
+                    from .sr import write_sr
+                    row["_sr_file"] = write_sr(Path(sr_dir), rel_file, img, region, pred, sc.get("quality_prob"),
+                                               getattr(predictor, 'model_id', None) or getattr(predictor, 'name', 'dxaqc')).name
+                    stats["sr"] += 1
+                except Exception as se:  # noqa: BLE001 — the report must never fail the row
+                    stats["sr_failures"] += 1
+                    log.warning("SR failed %s: %s", rel_file, se)
             rows.append(row)
             stats["success"] += 1
+            notify(i, img, region, pred)
         except Exception as e:  # noqa: BLE001
             msg = f"{type(e).__name__}: {e}"
             log.exception("FAIL predict %s", rel_file)
             stats["failure"] += 1
             rows.append(make_row(path_to_study=p2s, study_uid=img.study_uid, image_uid=img.sop_uid,
                                  status="Failure", seconds=time.perf_counter() - t0, error=msg))
+            notify(i, img)
     stats["studies"] = len(stats["studies"])
     stats["total_seconds"] = round(time.perf_counter() - t_all, 3)
     stats['success_rate'] = stats['success'] / len(files) if files else 0.0

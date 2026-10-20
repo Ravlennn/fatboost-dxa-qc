@@ -80,7 +80,7 @@ def _to_uint8(ds: pydicom.Dataset, warn: list[str] | None = None) -> np.ndarray:
     return np.clip(np.round(arr), 0, 255).astype(np.uint8)
 
 
-DEFAULT_SPACING_MM = 0.6  # GE Lunar Prodigy: 300 px = 180 мм, 280 px = 170 мм (см. docs/EDA.md)
+DEFAULT_SPACING_MM = 0.6  # GE Lunar Prodigy: 300 px = 180 мм, 280 px = 170 мм (см. README.md)
 
 
 def estimate_pixel_spacing(meta: dict) -> tuple[float, str]:

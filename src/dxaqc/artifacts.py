@@ -8,7 +8,7 @@ Anchored on the landmark model (L1-L4 column axis and vertebra height). Two chan
   * metal: compact near-saturated blobs (hooks, clips, buttons, hardware) outside the
     column; on the column only if far brighter than its neighbourhood (normalised renders
     saturate dense bone as well).
-Designed on unlabelled image sheets (quality labels hidden), see docs/METHODS_AND_MODELS.md.
+Designed on unlabelled image sheets (quality labels hidden), see README.md.
 """
 from __future__ import annotations
 

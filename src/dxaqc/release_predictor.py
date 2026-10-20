@@ -13,6 +13,21 @@ from .hip_backbones import build_hip_model
 from .predictor import BasePredictor, Prediction, SPINE_LAYOUT, SPINE_AXIS, SPINE_ARTIFACT, HIP_POSITION, HIP_ROI
 from .release_features import FrozenDenseNetEncoder, predict_linear_head
 
+# Hip ROI margins (TZ: 3 cm above/below, 2 cm at the sides). A ROI box that reaches past the image edge
+# violates the criterion under any reading of the box; the learned head (7 positives) is replaced by
+# this rule. Score = sigmoid(-margin / scale): 0.5 at 0 mm, so score >= 0.5 iff some margin is <= 0.
+# In practice only the bottom and right edges can trigger it: landmarks decode to heatmap cell centres
+# (>= (STRIDE - 1) / 2 input px from the top/left) and the letterbox pads only bottom/right, so a point
+# can land beyond the frame there and nowhere else (hip validation: top >= 7 mm, left >= 4 mm; all four
+# firings were the bottom edge).
+ROI_MARGIN_SCALE_MM = 5.0
+
+
+def roi_edge_score(measurements: dict) -> tuple[float, float]:
+    """Smallest of the four ROI margins (mm) and its score on the 0.5-threshold scale."""
+    margin = min(measurements[k] for k in ('roi_top_mm', 'roi_bottom_mm', 'roi_left_mm', 'roi_right_mm'))
+    return float(margin), float(1 / (1 + np.exp(np.clip(margin / ROI_MARGIN_SCALE_MM, -50, 50))))
+
 
 def hip_tensor(pixels: np.ndarray, region: str, res: int = 384) -> torch.Tensor:
     """Match historical hip training: native GE uint8 range [0,252], square then bilinear.
@@ -55,6 +70,7 @@ class ReleasePredictor(BasePredictor):
         self.view_gate = json.loads(bundle_path(self.root, self.manifest['view_gate']).read_text()) \
             if 'view_gate' in self.manifest else None
         self.use_view_gate = True
+        self.hip_roi_rule = True  # False restores the learned ROI head (for comparisons)
         self.landmarks = None
         self.landmark_heads = {}
         self.hip_heads = {}
@@ -83,6 +99,15 @@ class ReleasePredictor(BasePredictor):
             self.hip_models = loaded
         return self.hip_models
 
+    def warm_up(self):
+        """Load the hip ensemble and run it once, so the first hip of a session is not ~20 s slower than the rest."""
+        blank = np.zeros((64, 64), dtype=np.uint8)
+        with torch.no_grad():
+            for models, resolution in self._load_hip():
+                tensor = hip_tensor(blank, 'hip_right', resolution).to(self.device)
+                for model in models:
+                    model(tensor)
+
     def _score(self, key, features):
         head = self.heads[key]
         return float(predict_linear_head(head, features)[0, head['classes'].index(1)])
@@ -109,20 +134,28 @@ class ReleasePredictor(BasePredictor):
             prediction.details['warnings'].append('review: low anatomy confidence')
         return region, prediction
 
-    def predict(self, pixels, region, mm_per_px=None):
+    def predict(self, pixels, region, mm_per_px=None, points=None):
+        """Verdict for a known region. `points` replaces the landmark model's points (a correction
+        made by a specialist in the web UI); every measurement and head is then recomputed from them."""
         return self._predict(pixels, region, self.encoder.embed(pixels) if region == 'lumbar_spine' else None,
-                             mm_per_px=mm_per_px)
+                             mm_per_px=mm_per_px, points=points)
 
-    def _landmarks(self, pixels, region, mm_per_px=None):
+    def _landmarks(self, pixels, region, mm_per_px=None, points=None):
         from .landmarks import head_features, measurements
-        res = self.landmarks.predict(pixels, region)
+        if points is not None:
+            res = {'points': {k: [float(v[0]), float(v[1])] for k, v in points.items()}, 'confidence': 1.0}
+        else:
+            res = self.landmarks.predict(pixels, region)
         m = measurements(res['points'], region, pixels.shape, pixels, mm_per_px=mm_per_px)
-        return {'points': res['points'], 'confidence': res['confidence'], 'measurements': m,
-                'features': head_features(m, region)}
+        out = {'points': res['points'], 'confidence': res['confidence'], 'measurements': m,
+               'features': head_features(m, region)}
+        if points is not None:
+            out['source'] = 'specialist'
+        return out
 
     @torch.inference_mode()
-    def _predict(self, pixels, region, features, mm_per_px=None):
-        landmarks = self._landmarks(pixels, region, mm_per_px) if self.landmarks is not None else None
+    def _predict(self, pixels, region, features, mm_per_px=None, points=None):
+        landmarks = self._landmarks(pixels, region, mm_per_px, points) if self.landmarks is not None else None
         forced = []  # reasons allowed to set quality=1 (TZ: any violation => defect)
         if region == 'lumbar_spine':
             quality = self._score('spine_quality', features)
@@ -147,7 +180,7 @@ class ReleasePredictor(BasePredictor):
                     thresholds[SPINE_ARTIFACT] = self.artifact_head['threshold']
             codes = [code for code, score in reasons.items() if score >= thresholds[code]]
             if landmarks is not None and self.spine_policy == 'reasons':
-                # Defect iff a reason is found (nested selection, docs/FINAL_VALIDATION.md).
+                # Defect iff a reason is found (nested selection, README.md).
                 # quality score: 0.5 at the decision boundary, max over reasons of score/threshold.
                 ratio = max(reasons[c] / max(thresholds[c], 1e-9) for c in reasons)
                 quality, threshold = float(min(1.0, 0.5 * ratio)), 0.5
@@ -168,7 +201,7 @@ class ReleasePredictor(BasePredictor):
             reasons = {HIP_POSITION: float(p[1]), HIP_ROI: float(p[2])}
             reason_thr = {HIP_POSITION: thresholds['v_rotation'], HIP_ROI: thresholds['v_roi']}
             if landmarks is not None and self.hip_heads:
-                # Fusion: CNN score + lesser-trochanter geometry (docs/METHODS_AND_MODELS.md).
+                # Fusion: CNN score + lesser-trochanter geometry (README.md).
                 from .landmarks import apply_head
                 from .lesser_trochanter import detect, head_features
                 lt, lt_err = detect(pixels, landmarks['points'], mm=landmarks['measurements'].get('mm_per_px'))
@@ -184,19 +217,29 @@ class ReleasePredictor(BasePredictor):
                         reasons[code], reason_thr[code] = score, head['threshold']
                 if lt is None:
                     landmarks.setdefault('warnings', []).append(f'lesser trochanter not measured: {lt_err}')
+            if landmarks is not None and self.hip_roi_rule:
+                landmarks['roi_min_margin_mm'], reasons[HIP_ROI] = roi_edge_score(landmarks['measurements'])
+                reason_thr[HIP_ROI] = 0.5
+                forced.append(HIP_ROI)
             codes = [code for code, score in reasons.items() if score >= reason_thr[code]]
+            thresholds = reason_thr
         bad = int(quality >= threshold)
         warnings = []
         if not bad and any(code in forced for code in codes):
             bad = 1
             warnings.append('landmark measurement violates a TZ criterion; binary head overridden')
         if bad and not codes:
-            codes = ['quality_unspecified']
-            warnings.append('review: quality head detects a defect; specific cause is uncertain')
+            # The report must carry one of the five TZ codes: name the cause that came closest to its
+            # own threshold, and say so. (Before, this row got 'quality_unspecified', a code the
+            # organizer's parser may not accept.)
+            closest = max(reasons, key=lambda c: reasons[c] / max(thresholds[c], 1e-9))
+            codes = [closest]
+            warnings.append(f'review: defect found but no cause reached its threshold; reported the closest one ({closest})')
         if not bad and codes:
             warnings.append('review: binary quality and cause heads disagree')
             codes = []
-        details = {'warnings': warnings, 'quality_threshold': threshold}
+        details = {'warnings': warnings, 'quality_threshold': threshold,
+                   'reason_thresholds': {code: float(thresholds[code]) for code in reasons}}
         if landmarks is not None:
             details['landmarks'] = landmarks
         return Prediction(bad, codes, {'quality': quality, **reasons}, details)

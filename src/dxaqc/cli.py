@@ -45,12 +45,15 @@ def main(argv=None) -> int:
         model_arguments(parser)
         parser.add_argument('--path-mode', choices=['file', 'dir'], default='file')
         parser.add_argument('--details', action='store_true', help='добавить error_message')
-        parser.add_argument('--strict-columns', action='store_true', help='ровно 8 колонок ТЗ (по умолчанию)')
+        parser.add_argument('--strict-columns', action='store_true', help='8 колонок ТЗ и quality_prob (по умолчанию)')
         parser.add_argument('--scores', action='store_true', help='добавить непрерывные оценки для валидации')
+        parser.add_argument('--type-probs', action='store_true',
+                            help='добавить prob_<код>: вероятность каждого типа нарушения, 0.5 = порог этой причины')
         parser.add_argument('--fail-on-error', action='store_true', help='код 3 при хотя бы одном Failure; отчёт сохраняется')
         parser.add_argument('--no-view-gate', action='store_true',
                             help='не отклонять снимки вне области задачи (предплечье, боковая проекция)')
         parser.add_argument('--overlays', type=Path, help='папка или .zip: визуализация ориентиров (PNG + DICOM Secondary Capture)')
+        parser.add_argument('--sr', type=Path, help='папка или .zip: DICOM SR — текстовый отчёт с вердиктом и измерениями на каждый снимок')
         parser.add_argument('--log', type=Path)
         parser.add_argument('--predictor', choices=['release', 'dummy', 'spine_rules', 'hip_embed_lr', 'mvp', 'hip_cnn'], default='release', help='legacy-модели только для воспроизведения экспериментов')
         parser.add_argument('-v', '--verbose', action='store_true')
@@ -88,17 +91,30 @@ def main(argv=None) -> int:
         predictor = None
         if args.predictor != 'release':
             logging.warning('Experimental predictor=%s; not the release model', args.predictor)
+            # The runtime image ships only what the release model needs; the legacy predictors import
+            # scikit-learn / scipy lazily (inside predict), so check up front instead of failing every file.
+            import importlib.util
+            missing = [m for m in ('sklearn', 'scipy', 'joblib') if importlib.util.find_spec(m) is None]
+            if args.predictor != 'dummy' and missing:
+                raise ValueError(f'Предиктор {args.predictor} экспериментальный и не входит в релизную сборку '
+                                 f'(нет {", ".join(missing)}); используйте --predictor release '
+                                 f'или установите зависимости разработки: pip install -e .')
             from .predictor import load_predictor
             predictor = load_predictor(args.predictor)
-        overlay_dir, overlay_zip = None, None
-        if args.overlays:
-            if args.overlays.resolve() == args.input.resolve() or args.input.resolve() in args.overlays.resolve().parents:
-                raise ValueError('--overlays must be outside the input folder')
-            if args.overlays.suffix.lower() == '.zip':
-                import tempfile
-                overlay_zip, overlay_dir = args.overlays, Path(tempfile.mkdtemp(prefix='dxaqc_overlays_'))
-            else:
-                overlay_dir = args.overlays
+        import tempfile
+
+        def out_target(value, name):
+            """A folder, or a .zip filled from a temporary folder at the end."""
+            if value is None:
+                return None, None
+            if value.resolve() == args.input.resolve() or args.input.resolve() in value.resolve().parents:
+                raise ValueError(f'--{name} must be outside the input folder')
+            if value.suffix.lower() == '.zip':
+                return value, Path(tempfile.mkdtemp(prefix=f'dxaqc_{name}_'))
+            return None, value
+
+        overlay_zip, overlay_dir = out_target(args.overlays, 'overlays')
+        sr_zip, sr_dir = out_target(args.sr, 'sr')
         if args.no_view_gate:
             predictor = predictor or create_predictor(args.model_dir, device=args.device, threads=args.threads)
             if hasattr(predictor, 'use_view_gate'):
@@ -106,17 +122,20 @@ def main(argv=None) -> int:
                 logging.warning('view gate disabled: out-of-scope images will get a verdict')
         rows, stats = analyze(args.input, predictor=predictor, model_dir=args.model_dir, device=args.device,
                               threads=args.threads, path_mode=args.path_mode, exclude=output_paths,
-                              overlay_dir=overlay_dir)
-        if overlay_zip is not None:
+                              overlay_dir=overlay_dir, sr_dir=sr_dir)
+        for zip_path, folder in ((overlay_zip, overlay_dir), (sr_zip, sr_dir)):
+            if zip_path is None:
+                continue
             import shutil
             import zipfile
-            overlay_zip.parent.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(overlay_zip, 'w', zipfile.ZIP_DEFLATED) as zf:
-                for f in sorted(overlay_dir.rglob('*')):
+            zip_path.parent.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zf:
+                for f in sorted(folder.rglob('*')):
                     if f.is_file():
-                        zf.write(f, f.relative_to(overlay_dir).as_posix())
-            shutil.rmtree(overlay_dir, ignore_errors=True)
-        write_report(rows, args.output, strict_columns=args.strict_columns or not args.details, scores=args.scores)
+                        zf.write(f, f.relative_to(folder).as_posix())
+            shutil.rmtree(folder, ignore_errors=True)
+        write_report(rows, args.output, strict_columns=args.strict_columns or not args.details, scores=args.scores,
+                     type_probs=args.type_probs)
         summary_path.write_text(json.dumps(stats, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         print(json.dumps(stats, ensure_ascii=False))
         if not rows:

@@ -23,6 +23,21 @@ ap.add_argument('--device', choices=['auto', 'cpu', 'mps', 'cuda'], default='aut
 ap.add_argument('--init-encoder', type=Path, help='SSL checkpoint (scripts/train_ssl_dxa.py) for model.features')
 ap.add_argument('--workers', type=int, default=0, help='DataLoader workers (GPU: 8)')
 ap.add_argument('--out-root', type=Path, default=None, help='default outputs/hip_cnn')
+ap.add_argument('--aug', choices=['full', 'photometric', 'no_erase'], default='full',
+                help="'photometric' drops RandomErasing and the affine jitter, 'no_erase' drops only the "
+                     "erasing: it can cover the lesser trochanter while the label stays the same")
+ap.add_argument('--loss', choices=['weighted_bce', 'bce', 'smooth', 'gce', 'asl'], default='weighted_bce',
+                help="'weighted_bce' is the current recipe (pos_weight by prevalence); 'bce' drops the "
+                     "weighting; 'smooth' keeps it and softens the targets by --smooth-eps; "
+                     "'gce' is Generalized Cross Entropy (Zhang & Sabuncu 2018) with the same pos_weight; "
+                     "'asl' is the Asymmetric Loss (Ben-Baruch et al. 2021), which handles imbalance itself")
+ap.add_argument('--smooth-eps', type=float, default=0.05, help='label smoothing for --loss smooth')
+ap.add_argument('--gce-q', type=float, default=0.7, help='GCE q (paper default)')
+ap.add_argument('--asl-gamma-neg', type=float, default=4.0, help='ASL gamma for negatives (paper default)')
+ap.add_argument('--asl-gamma-pos', type=float, default=0.0, help='ASL gamma for positives (paper default)')
+ap.add_argument('--asl-clip', type=float, default=0.05, help='ASL probability margin for negatives (paper default)')
+ap.add_argument('--exclude-folds', default='', help='folds kept out of training in addition to the predicted one '
+                                                    '(nested isolation: --folds j --exclude-folds f trains without {f,j})')
 args = ap.parse_args()
 if args.cpu_threads < 1 or args.batch_pause < 0:
     ap.error('cpu-threads must be positive and batch-pause nonnegative')
@@ -30,7 +45,7 @@ if args.resume_from: args.resume_from = str(args.resume_from.resolve())
 torch.set_num_threads(args.cpu_threads)
 torch.set_num_interop_threads(1)
 def source_commit():
-    # Portable kit (h100_kit/build_portable_kit.sh) has no .git: the commit is in ./COMMIT.
+    # A copy without .git (e.g. a portable kit) keeps the commit in ./COMMIT.
     try:
         return subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True, stderr=subprocess.DEVNULL).strip()
     except Exception:
@@ -89,8 +104,13 @@ Y = hip[TARGETS].values.astype(np.float32)
 
 T = torchvision.transforms
 norm = T.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
-train_tf = T.Compose([T.Resize((args.res, args.res)), T.RandomAffine(degrees=8, translate=(0.12, 0.12) if args.crop else (0.06, 0.06), scale=(0.85, 1.15) if args.crop else (0.9, 1.1), fill=0),
-                      T.ColorJitter(brightness=0.25, contrast=0.25), T.Grayscale(3), T.ToTensor(), norm, T.RandomErasing(p=0.3, scale=(0.01, 0.05))])
+if args.aug in ('full', 'no_erase'):
+    erase = [T.RandomErasing(p=0.3, scale=(0.01, 0.05))] if args.aug == 'full' else []
+    train_tf = T.Compose([T.Resize((args.res, args.res)), T.RandomAffine(degrees=8, translate=(0.12, 0.12) if args.crop else (0.06, 0.06), scale=(0.85, 1.15) if args.crop else (0.9, 1.1), fill=0),
+                          T.ColorJitter(brightness=0.25, contrast=0.25), T.Grayscale(3), T.ToTensor(), norm] + erase)
+else:  # geometry and occlusion carry the label here, so only brightness/contrast are jittered
+    train_tf = T.Compose([T.Resize((args.res, args.res)), T.ColorJitter(brightness=0.25, contrast=0.25),
+                          T.Grayscale(3), T.ToTensor(), norm])
 test_tf = T.Compose([T.Resize((args.res, args.res)), T.Grayscale(3), T.ToTensor(), norm])
 
 class DS(torch.utils.data.Dataset):
@@ -114,6 +134,24 @@ def rest():
         if DEV == 'mps': torch.mps.synchronize()
         elif DEV == 'cuda': torch.cuda.synchronize()
         time.sleep(args.batch_pause)
+
+def gce_loss(logits, y, pos_weight, q):
+    """Generalized Cross Entropy (1 - p_t^q) / q: bounded, so a mislabelled frame cannot dominate the gradient.
+    Positives keep the prevalence weight of the current recipe, so only the loss shape changes."""
+    p = torch.sigmoid(logits)
+    p_t = (y * p + (1 - y) * (1 - p)).clamp(min=1e-6)
+    w = torch.where(y > 0.5, pos_weight, torch.ones_like(y)) if pos_weight is not None else 1.0
+    return (w * (1 - p_t ** q) / q).mean()
+
+
+def asl_loss(logits, y, gamma_pos, gamma_neg, clip):
+    """Asymmetric Loss: focuses negatives with gamma_neg and drops the easiest ones below the clip margin."""
+    p = torch.sigmoid(logits)
+    p_m = (p - clip).clamp(min=0)
+    pos = y * (1 - p) ** gamma_pos * torch.log(p.clamp(min=1e-8))
+    neg = (1 - y) * p_m ** gamma_neg * torch.log((1 - p_m).clamp(min=1e-8))
+    return -(pos + neg).mean()
+
 
 def forward_views(m,x):
     if x.shape[1] == 6: return (m(x[:,:3]) + m(x[:,3:])) / 2
@@ -156,10 +194,11 @@ if args.resume_from:
         limitation='Incomplete folds restarted with seed + fold; original RNG state was not saved')
     (OUT / 'provenance.json').write_text(json.dumps(current, indent=2))
     print('Recovered completed folds:', sorted(completed), flush=True)
+EXCLUDE = [int(x) for x in args.exclude_folds.split(',') if x.strip() != '']
 for k in [int(f) for f in args.folds.split(",")]:
     if k in completed: continue
     torch.manual_seed(args.seed + k); np.random.seed(args.seed + k)
-    tr = np.where(hip.fold != k)[0]; te = np.where(hip.fold == k)[0]
+    tr = np.where(~hip.fold.isin([k] + EXCLUDE))[0]; te = np.where(hip.fold == k)[0]
     pos = np.nan_to_num(Y[tr]).sum(0); neg = len(tr) - pos; pw = torch.tensor(np.clip(neg / np.maximum(pos, 1), 1, 10), dtype=torch.float32).to(DEV)
     m = build(); opt = torch.optim.AdamW(m.parameters(), lr=args.lr, weight_decay=0.05)
     sched = torch.optim.lr_scheduler.OneCycleLR(opt, max_lr=args.lr, total_steps=args.epochs * ((len(tr) + args.bs - 1) // args.bs), pct_start=0.15)
@@ -172,7 +211,16 @@ for k in [int(f) for f in args.folds.split(",")]:
             x, y = x.to(DEV), y.to(DEV); mask = ~torch.isnan(y)
             with torch.autocast('cuda', dtype=torch.bfloat16, enabled=AMP):
                 logits = forward_views(m, x).float()
-            loss = torch.nn.functional.binary_cross_entropy_with_logits(logits[mask], torch.nan_to_num(y)[mask], pos_weight=pw.expand_as(y)[mask])
+            tgt = torch.nan_to_num(y)[mask]
+            if args.loss == 'smooth':  # labels are noisy: 6 unlabelled tilts, 2 defects without a reason
+                tgt = tgt * (1 - 2 * args.smooth_eps) + args.smooth_eps
+            weight = pw.expand_as(y)[mask] if args.loss != 'bce' else None
+            if args.loss == 'gce':
+                loss = gce_loss(logits[mask], tgt, weight, args.gce_q)
+            elif args.loss == 'asl':
+                loss = asl_loss(logits[mask], tgt, args.asl_gamma_pos, args.asl_gamma_neg, args.asl_clip)
+            else:
+                loss = torch.nn.functional.binary_cross_entropy_with_logits(logits[mask], tgt, pos_weight=weight)
             opt.zero_grad(); loss.backward(); opt.step(); sched.step(); tot += loss.item() * len(x)
             rest()
         if (ep + 1) % 5 == 0 or ep == args.epochs - 1:

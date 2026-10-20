@@ -4,7 +4,7 @@ Anchored on landmark-model points (neck centre and neck axis give the medial sid
 In DXA the LT is less dense than the cortex, so it appears as medium-density bone
 protruding medially beyond the bright cortical edge, ~20-60 mm below the neck centre.
 TZ: correct positioning = contour slightly deformed by the LT; over-rotation = smooth
-contour; under-rotation = LT too large. See docs/METHODS_AND_MODELS.md.
+contour; under-rotation = LT too large. See README.md.
 """
 from __future__ import annotations
 

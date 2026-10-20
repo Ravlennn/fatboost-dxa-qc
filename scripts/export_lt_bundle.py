@@ -65,8 +65,8 @@ def main():
         spec['hip_heads'][code] = {'features': FEATS, 'mean': sc.mean_.tolist(), 'scale': sc.scale_.tolist(),
                                    'coef': lr.coef_[0].tolist(), 'intercept': float(lr.intercept_[0]), 'threshold': thr,
                                    'cnn_input': pcol, 'n': int(len(y)), 'pos': int(y.sum()), 'C': 0.3,
-                                   'source': 'scripts/export_lt_bundle.py; docs/METHODS_AND_MODELS.md'}
-    # Spine artifact: fusion of CNN score and the landmark-anchored detector (docs/METHODS_AND_MODELS.md).
+                                   'source': 'scripts/export_lt_bundle.py; README.md'}
+    # Spine artifact: fusion of CNN score and the landmark-anchored detector (README.md).
     oof = pd.read_csv(ROOT / 'outputs/release_validation_v1/assembled_oof.csv')
     d = oof[oof.region.eq('spine') & oof.v_artifact.notna()]
     art = json.load(open(ROOT / 'outputs/artifacts_lm_v1/measurements.json'))

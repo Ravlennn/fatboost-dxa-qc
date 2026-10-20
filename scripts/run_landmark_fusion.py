@@ -43,7 +43,7 @@ def features(df):
         if 'iliac_frac_max' in m:
             f['iliac_max'] = m['iliac_frac_max']
             f['iliac_min'] = m['iliac_frac_min']
-        if 'iliac_top_rel' in m:  # bottom-anchored (docs/METHODS_AND_MODELS.md)
+        if 'iliac_top_rel' in m:  # bottom-anchored (README.md)
             f['iliac_top_rel'] = m['iliac_top_rel']
             f['frame_height_vert'] = m['frame_height_vert']
             f['above_L4_vert'] = m['above_L4_vert']

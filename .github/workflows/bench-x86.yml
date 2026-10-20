@@ -1,0 +1,41 @@
+# CPU timing of the release image on a GitHub-hosted x86_64 runner (no x86 machine in the team).
+# Synthetic images only (scripts/bench_cpu.py): no patient data leaves the team's computers.
+# The image comes from this repository's private release; limits are those of scripts/run.sh.
+name: bench-x86
+on:
+  workflow_dispatch:
+    inputs:
+      release:
+        description: release tag with dxaqc_amd64.tar.gz
+        default: image-61ab8e7
+permissions:
+  contents: read
+jobs:
+  bench:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - name: Machine
+        run: |
+          uname -m; nproc; free -g
+          lscpu | grep -E 'Model name|^CPU\(s\)|Thread|MHz' || true
+      - name: Load the image
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download "${{ inputs.release }}" -p dxaqc_amd64.tar.gz
+          sha256sum dxaqc_amd64.tar.gz
+          docker load -i dxaqc_amd64.tar.gz
+          docker image inspect dxaqc:local --format '{{.Architecture}}'
+      - name: Bench (2 CPU, 4 GB, no network, read-only — as scripts/run.sh)
+        run: |
+          mkdir -p out
+          docker run --rm --cpus=2 --memory=4g --network none --read-only --tmpfs /tmp:rw,size=1g \
+            --user "$(id -u):$(id -g)" -v "$PWD/scripts:/bench:ro" -v "$PWD/out:/out" \
+            --entrypoint python dxaqc:local /bench/bench_cpu.py --repeats 5 --json /out/bench.json
+          { echo '```json'; cat out/bench.json; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-x86
+          path: out/bench.json

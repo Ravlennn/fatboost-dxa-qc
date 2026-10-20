@@ -200,32 +200,87 @@ class ReleaseCLITests(unittest.TestCase):
         self.assertEqual(stats["success"], 0)
         self.assertEqual(stats["failure"], 1)
 
-    def test_zip_rejects_traversal_absolute_backslash_and_symlink(self):
-        for name in ("../escape.dcm", "/absolute.dcm", "C:/absolute.dcm", "folder\\escape.dcm"):
+    def test_zip_skips_unsafe_members_and_normalises_windows_separators(self):
+        good = synthetic_dicom(self.root / "good.dcm").read_bytes()
+        for name in ("../escape.dcm", "/absolute.dcm", "C:/absolute.dcm"):
             with self.subTest(name=name):
                 archive = self.root / "unsafe.zip"
-                archive.write_bytes(zip_bytes([(name, b"payload")]))
-                with self.assertRaises(ValueError), input_directory(archive):
-                    pass
+                archive.write_bytes(zip_bytes([(name, b"payload"), ("ok/image.dcm", good)]))
+                skipped = []
+                with input_directory(archive, skipped=skipped) as extracted:
+                    files = sorted(p.relative_to(extracted).as_posix() for p in extracted.rglob("*") if p.is_file())
+                self.assertEqual(files, ["ok/image.dcm"])            # nothing written outside, batch goes on
+                self.assertEqual([x["reason"] for x in skipped], ["unsafe path"])
+        archive.write_bytes(zip_bytes([("folder\\image.dcm", good)]))
+        with input_directory(archive) as extracted:
+            self.assertTrue((extracted / "folder/image.dcm").is_file())
         link = zipfile.ZipInfo("link")
         link.create_system = 3
         link.external_attr = (stat.S_IFLNK | 0o777) << 16
         archive.write_bytes(zip_bytes([(link, b"../outside")]))
-        with self.assertRaises(ValueError), input_directory(archive):
-            pass
+        skipped = []
+        with input_directory(archive, skipped=skipped) as extracted:
+            self.assertFalse((extracted / "link").exists())
+        self.assertEqual(skipped[0]["reason"], "symbolic link")
 
-    def test_zip_rejects_duplicate_casefolded_entries_and_limits(self):
-        archive = self.root / "unsafe.zip"
+    def test_zip_duplicates_kept_under_distinct_names_and_limits(self):
+        archive = self.root / "dup.zip"
         with warnings.catch_warnings():
             warnings.simplefilter("ignore", UserWarning)
-            archive.write_bytes(zip_bytes([("a.dcm", b"x"), ("A.dcm", b"x")]))
-        with self.assertRaisesRegex(ValueError, "Duplicate"), input_directory(archive):
-            pass
+            archive.write_bytes(zip_bytes([("a.dcm", b"x"), ("A.dcm", b"y")]))
+        skipped = []
+        with input_directory(archive, skipped=skipped) as extracted:
+            self.assertEqual(len([p for p in extracted.rglob("*") if p.is_file()]), 2)
+        self.assertTrue(skipped[0]["kept"])
         archive.write_bytes(zip_bytes([("a.dcm", b"12345")]))
-        for limit in ("MAX_FILES", "MAX_ARCHIVE_BYTES", "MAX_FILE_BYTES"):
+        for limit in ("MAX_FILES", "MAX_ARCHIVE_BYTES"):                 # zip-bomb guards still refuse
             with self.subTest(limit=limit), patch("dxaqc.inputs." + limit, 0):
                 with self.assertRaises(ValueError), input_directory(archive):
                     pass
+        skipped = []
+        with patch("dxaqc.inputs.MAX_FILE_BYTES", 0), input_directory(archive, skipped=skipped) as extracted:
+            self.assertEqual(list(extracted.rglob("*.dcm")), [])
+        self.assertEqual(skipped[0]["reason"], "member exceeds size limit")
+
+    def test_bad_member_becomes_a_failure_row_not_a_lost_batch(self):
+        good = synthetic_dicom(self.root / "good.dcm").read_bytes()
+        archive = self.root / "mixed.zip"
+        archive.write_bytes(zip_bytes([("../escape.dcm", b"x"), ("study/image.dcm", good),
+                                       ("разметка.xlsx", b"PK\x03\x04 not an image")]))
+        rows, stats = analyze(archive, predictor=SyntheticPredictor())
+        status = {r["path_to_study"]: r["processing_status"] for r in rows}
+        self.assertEqual(status["study/image.dcm"], "Success")
+        self.assertEqual(status["../escape.dcm"], "Failure")
+        self.assertNotIn("разметка.xlsx", status)                 # a document is not an image row
+        self.assertEqual(stats["skipped_non_dicom"], 1)
+
+    def test_contract_violation_turns_row_into_failure_and_keeps_the_batch(self):
+        good = make_row(path_to_study="a.dcm", study_uid="2.25.1", image_uid="2.25.2",
+                        anatomical_region="hip_left", quality_class=0)
+        broken = dict(good, path_to_study="b.dcm", image_uid="2.25.3", quality_class=7)   # impossible class
+        repeated = dict(good, image_uid="2.25.4")                                        # same path twice
+        fake = ([good, broken, repeated], {"files": 3, "success": 3, "failure": 0, "skipped_non_dicom": 0})
+        with patch("dxaqc.api.process_folder", return_value=fake):
+            rows, stats = analyze(self.root, predictor=SyntheticPredictor())
+        self.assertEqual([r["processing_status"] for r in rows], ["Success", "Failure", "Failure"])
+        self.assertEqual(len({r["path_to_study"] for r in rows}), 3)
+        self.assertEqual((stats["success"], stats["failure"]), (1, 2))
+        self.assertTrue(stats["contract_errors"])
+
+    def test_nested_zip_and_folder_with_zips_are_expanded(self):
+        good = synthetic_dicom(self.root / "good.dcm").read_bytes()
+        inner = zip_bytes([("image.dcm", good)])
+        outer = self.root / "outer.zip"
+        outer.write_bytes(zip_bytes([("study1.zip", inner), ("study2/image.dcm", good)]))
+        rows, stats = analyze(outer, predictor=SyntheticPredictor())
+        self.assertEqual(sorted(r["path_to_study"] for r in rows), ["study1/image.dcm", "study2/image.dcm"])
+        self.assertEqual(stats["success"], 2)
+        folder = self.root / "folder_input"
+        folder.mkdir()
+        (folder / "a.zip").write_bytes(inner)
+        (folder / "b.dcm").write_bytes(good)
+        rows, stats = analyze(folder, predictor=SyntheticPredictor())
+        self.assertEqual(sorted(r["path_to_study"] for r in rows), ["a/image.dcm", "b.dcm"])
 
     def test_zip_nested_input_is_processed_and_temporary_directory_removed(self):
         path = synthetic_dicom(self.root / "source.dcm")
@@ -238,7 +293,7 @@ class ReleaseCLITests(unittest.TestCase):
         self.assertEqual(stats["success"], 1)
         self.assertEqual(rows[0]["path_to_study"], "one/two/image.dcm")
 
-    def test_strict_csv_xlsx_have_eight_columns_and_xlsx_strings_not_formulas(self):
+    def test_strict_csv_xlsx_have_tz_columns_plus_prob_and_xlsx_strings_not_formulas(self):
         row = make_row(path_to_study="=SUM(1,2)", study_uid="2.25.1", image_uid="2.25.2",
                        anatomical_region="hip_left", quality_class=0)
         csv_path, xlsx_path = self.root / "report.csv", self.root / "report.xlsx"
@@ -246,13 +301,35 @@ class ReleaseCLITests(unittest.TestCase):
         write_report([row], xlsx_path, strict_columns=True)
         with csv_path.open(newline="") as stream:
             reader = csv.DictReader(stream)
-            self.assertEqual(reader.fieldnames, COLUMNS)
-            self.assertEqual(next(reader)["path_to_study"], "=SUM(1,2)")
+            self.assertEqual(reader.fieldnames, COLUMNS + ["quality_prob"])
+            first = next(reader)
+            self.assertEqual(first["path_to_study"], "=SUM(1,2)")
+            self.assertEqual(first["anatomical_region"], "Проксимальный отдел бедра")
         workbook = load_workbook(xlsx_path, data_only=False)
-        self.assertEqual([cell.value for cell in workbook.active[1]], COLUMNS)
+        self.assertEqual([cell.value for cell in workbook.active[1]], COLUMNS + ["quality_prob"])
         self.assertEqual(workbook.active["A2"].data_type, "s")
         self.assertEqual(workbook.active["A2"].value, "=SUM(1,2)")
         workbook.close()
+
+    def test_organizer_value_lists_and_probability_alignment(self):
+        from dxaqc.report import quality_prob, report_text
+        # answers to questions 6 and 15: Russian texts, side dropped, ';' separated, no duplicates
+        spine = report_text({"anatomical_region": "lumbar_spine",
+                             "violation_type": "spine_scan_range;spine_axis_tilt;spine_artifact"})
+        self.assertEqual(spine["anatomical_region"], "Поясничный отдел позвоночника")
+        self.assertEqual(spine["violation_type"],
+                         "Некорректная укладка;Не выровнена ось позвоночника;Присутствуют посторонние предметы")
+        hip = report_text({"anatomical_region": "hip_right", "violation_type": "hip_positioning;hip_roi_margins"})
+        self.assertEqual((hip["anatomical_region"], hip["violation_type"]),
+                         ("Проксимальный отдел бедра", "Некорректная укладка;Некорректная область интереса"))
+        self.assertEqual(report_text({"anatomical_region": "hip_left", "violation_type": ""})["violation_type"], "")
+        # question 8: [0, 1], each region's threshold lands on 0.5, always consistent with the class
+        self.assertEqual(quality_prob(0.3, 0.3, 1), 0.5)
+        self.assertLess(quality_prob(0.1, 0.3, 0), 0.5)
+        self.assertGreater(quality_prob(0.9, 0.3, 1), 0.5)
+        self.assertEqual(quality_prob(0.2, 0.3, 1), 0.5)       # a rule forced the defect: never below 0.5
+        self.assertLess(quality_prob(0.9, 0.3, 0), 0.5)
+        self.assertTrue(0 <= quality_prob(5.0, 0.3, 1) <= 1)
 
     def test_report_contract_rejects_nonfinite_time_and_scores(self):
         base = make_row(path_to_study="a", study_uid="2.25.1", image_uid="2.25.2", anatomical_region="hip_left", quality_class=0)
@@ -281,7 +358,7 @@ class ReleaseCLITests(unittest.TestCase):
         self.assertEqual(code, 4, error)
         with report.open(newline="") as stream:
             rows = list(csv.reader(stream))
-        self.assertEqual(rows, [COLUMNS])
+        self.assertEqual(rows, [COLUMNS + ["quality_prob"]])
 
     def test_cli_fail_on_error_keeps_complete_report(self):
         batch = self.root / "input"

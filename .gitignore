@@ -18,3 +18,13 @@ tests/fixtures/
 # H100 kit: data archive built locally (medical data never goes to git)
 h100_kit/dist/
 h100_results_*.tar.gz
+models/foundation/
+
+# web UI: sources in ui/, the built bundle ships in src/dxaqc/webui_dist
+ui/node_modules/
+ui/dist/
+# дизайн-инструменты: бриф, скриншоты ревью
+.impeccable/
+# второй интерфейс
+ui-journal/node_modules/
+ui-journal/dist/

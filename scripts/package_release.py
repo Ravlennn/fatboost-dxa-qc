@@ -11,10 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'src'))
 from dxaqc.bundle import sha256, verify_bundle
 
-DOCS = ['PROJECT_DOCUMENTATION.md', 'RELEASE.md', 'DEPLOYMENT.md', 'TRAINING.md',
-        'DEMO.md', 'FINAL_VALIDATION.md', 'STUDY_LEVEL.md', 'ROBUSTNESS.md',
-        'METHODS_AND_MODELS.md', 'EXPERIMENT_RESULTS.md', 'RESEARCH_SOURCES.md',
-        'THIRD_PARTY.md', 'EXPERIMENTS.md', 'ACCEPTANCE.json']
+DOCS = ['DEPLOYMENT.md', 'TRAINING.md', 'DEMO.md', 'THIRD_PARTY.md', 'ACCEPTANCE.json']
 
 def main():
     parser = argparse.ArgumentParser()

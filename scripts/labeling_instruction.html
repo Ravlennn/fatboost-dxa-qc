@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<title>Инструкция по разметке ориентиров DXA</title>
+<style>
+@page { size: A4; margin: 16mm 16mm 18mm; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 10.5pt/1.5 "Helvetica Neue", Helvetica, Arial, sans-serif; color: #17191c; }
+h1 { font-size: 20pt; line-height: 1.2; margin: 0 0 4pt; letter-spacing: -0.2pt; }
+h2 { font-size: 14pt; margin: 18pt 0 6pt; padding-top: 6pt; border-top: 2pt solid #f2c14e; break-after: avoid; }
+h3 { font-size: 11pt; margin: 12pt 0 4pt; break-after: avoid; }
+p { margin: 0 0 6pt; }
+ul, ol { margin: 0 0 8pt; padding-left: 16pt; }
+li { margin: 0 0 3pt; }
+.lead { font-size: 11.5pt; color: #3b3f45; margin-bottom: 10pt; }
+.meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8pt; margin: 10pt 0 6pt; }
+.meta div { background: #f5f3ee; border-radius: 6pt; padding: 8pt 10pt; }
+.meta b { display: block; font-size: 15pt; }
+.meta span { color: #5a5f66; font-size: 9pt; }
+.note { background: #fff6dc; border-left: 3pt solid #f2c14e; padding: 7pt 10pt; border-radius: 0 6pt 6pt 0; margin: 8pt 0; break-inside: avoid; }
+.warn { background: #fdece8; border-left: 3pt solid #d9593d; padding: 7pt 10pt; border-radius: 0 6pt 6pt 0; margin: 8pt 0; break-inside: avoid; }
+table { width: 100%; border-collapse: collapse; margin: 4pt 0 8pt; font-size: 9.8pt; break-inside: avoid; }
+th { text-align: left; font-size: 9pt; color: #5a5f66; font-weight: 600; border-bottom: 1pt solid #c9c5bc; padding: 4pt 6pt; }
+td { border-bottom: 0.6pt solid #e2ded5; padding: 5pt 6pt; vertical-align: top; }
+td.n { width: 18pt; font-weight: 700; }
+.dot { display: inline-block; width: 8pt; height: 8pt; border-radius: 50%; margin-right: 4pt; vertical-align: 0; border: 0.6pt solid #14171b; }
+figure { margin: 6pt 0 10pt; break-inside: avoid; }
+figure img, figure svg { display: block; max-width: 100%; height: auto; border-radius: 4pt; }
+figcaption { font-size: 9pt; color: #5a5f66; margin-top: 4pt; }
+.shot { position: relative; }
+.shot img { border: 0.6pt solid #c9c5bc; }
+.badge { position: absolute; width: 16pt; height: 16pt; border-radius: 50%; background: #f2c14e; color: #1a1405; font-weight: 700;
+  font-size: 9.5pt; line-height: 16pt; text-align: center; border: 1.5pt solid #1a1405; }
+.examples { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10pt; break-inside: avoid; }
+.examples figure { margin: 0; }
+.examples img { width: 100%; height: auto; background: #000; }
+.frame { position: relative; }
+.keys td:first-child { white-space: nowrap; width: 110pt; }
+kbd { font: 8.5pt Menlo, monospace; border: 0.6pt solid #b8b3a9; border-bottom-width: 1.4pt; border-radius: 3pt; padding: 0.5pt 3pt; background: #faf9f6; }
+.page-break { break-before: page; }
+.fill { background: #fff3c4; padding: 0 3pt; border-radius: 2pt; }
+.small { font-size: 9pt; color: #5a5f66; }
+</style>
+</head>
+<body>
+
+<h1>Разметка анатомических ориентиров на снимках DXA</h1>
+<p class="lead">Инструкция для врача. Чтение — 7 минут, работа — около 1,5–2 часов, можно в несколько подходов.</p>
+
+<p>Мы разрабатываем систему автоматического контроля качества укладки при денситометрии. Система находит на снимке анатомические ориентиры и по ним проверяет укладку: наклон оси позвоночника, границы сканирования, ротацию бедра. Чтобы измерения стали точнее, нам нужны ориентиры, поставленные врачом.</p>
+
+<div class="meta">
+  <div><b>{{N_TOTAL}} снимков</b><span>{{N_SPINE}} позвоночника и {{N_HIP}} бедра</span></div>
+  <div><b>≈ 1 минута</b><span>на снимок; всего 1,5–2 часа</span></div>
+  <div><b>до <span class="fill">{{DEADLINE}}</span></b><span>срок сдачи</span></div>
+</div>
+
+<div class="warn"><b>Оценивать качество снимка не нужно.</b> Мы не просим заключения «норма / брак» и причин. Нужны только точки: где лежат позвонки, гребни подвздошных костей, головка и шейка бедра, малый вертел.</div>
+
+<h3>Что вы получили</h3>
+<ul>
+  <li><b>Разметка_позвоночник.html</b> и <b>Разметка_бедро.html</b> — программы разметки со встроенными снимками. Открываются двойным щелчком в браузере (Chrome, Edge, Яндекс.Браузер, Firefox, Safari). Интернет не нужен, ничего устанавливать не надо.</li>
+  <li>Эту инструкцию.</li>
+</ul>
+<p class="small">Снимки обезличены. Пожалуйста, не передавайте файлы третьим лицам и удалите их после сдачи результата.</p>
+
+<h2>1. Как работать в программе</h2>
+
+<ol>
+  <li>При первом открытии введите фамилию и инициалы.</li>
+  <li><b>Точки уже стоят там, где их нашла программа. Это черновик, и он часто ошибается.</b> Проверьте каждую точку по очереди: выбранная обведена белым кольцом, подсказка к ней — справа.</li>
+  <li>Если точка стоит верно — нажмите <kbd>Enter</kbd>. Если нет — перетащите её мышью или просто щёлкните в нужное место снимка. Перемещённая точка считается подтверждённой.</li>
+  <li>Если структуры нет в кадре или её не видно — нажмите «Нет на снимке» (<kbd>N</kbd>).</li>
+  <li>Когда все точки проверены, появится «Снимок размечен». <kbd>Enter</kbd> — переход к следующему неразмеченному снимку.</li>
+</ol>
+<div class="note">Не подтверждайте точку, не посмотрев на неё. Нам важно именно ваше положение точки, а не согласие с программой. Если снимок мелкий — увеличьте его колесом мыши и поиграйте яркостью и контрастом.</div>
+
+<figure class="shot">
+  <div class="frame">
+  <img src="{{IMG_UI_HIP}}" alt="Окно программы разметки">
+  <span class="badge" style="left: 72.6%; top: 16%;">1</span>
+  <span class="badge" style="left: 72.6%; top: 50%;">2</span>
+  <span class="badge" style="left: 33%; top: 57%;">3</span>
+  <span class="badge" style="left: 47%; top: 93%;">4</span>
+  <span class="badge" style="left: 97%; top: 0.4%;">5</span>
+  </div>
+  <figcaption>
+    <b>1</b> список точек и их статус · <b>2</b> подсказка к выбранной точке и кнопки · <b>3</b> точки на снимке: пунктирный кружок — ещё не проверена, сплошной — подтверждена, белое кольцо — выбранная ·
+    <b>4</b> увеличение, яркость и контраст · <b>5</b> сохранение результата в файл
+  </figcaption>
+</figure>
+
+<h2 style="break-before: page">2. Позвоночник: 8 точек</h2>
+<figure>{{SVG_SPINE}}</figure>
+<table>
+  <tr><th></th><th>Точка</th><th>Где ставить</th></tr>
+  <tr><td class="n">1</td><td><span class="dot" style="background:#b48cff"></span>Th12 — центр тела</td><td>Центр тела XII грудного позвонка. Если центр тела Th12 выше верхнего края кадра — «Нет на снимке».</td></tr>
+  <tr><td class="n">2</td><td><span class="dot" style="background:#5cc8ff"></span>L1 — верхняя замыкательная пластинка</td><td>Середина верхней замыкательной пластинки L1.</td></tr>
+  <tr><td class="n">3–5</td><td><span class="dot" style="background:#4fd6c4"></span><span class="dot" style="background:#7ee08a"></span><span class="dot" style="background:#c8e070"></span>Промежутки L1/L2, L2/L3, L3/L4</td><td>Середина межпозвонкового промежутка — посередине между замыкательными пластинками соседних позвонков, по центру ширины тела.</td></tr>
+  <tr><td class="n">6</td><td><span class="dot" style="background:#f0b85a"></span>L4 — нижняя замыкательная пластинка</td><td>Середина нижней замыкательной пластинки L4.</td></tr>
+  <tr><td class="n">7, 8</td><td><span class="dot" style="background:#ff8a65"></span><span class="dot" style="background:#ff6f91"></span>Гребни подвздошных костей</td><td>Самая высокая точка гребня каждой подвздошной кости. «Слева» и «справа» — <b>как на экране</b>, а не по сторонам пациента. Если гребень не попал в кадр — «Нет на снимке».</td></tr>
+</table>
+<ul>
+  <li><b>Нумерация.</b> L1 — первый позвонок без рёбер, Th12 несёт XII ребро. При переходном позвонке, 11 или 13 парах рёбер ставьте точки по своему суждению и отметьте «Сомневаюсь» с комментарием.</li>
+  <li>Все точки на позвонках ставятся <b>по центру ширины тела позвонка</b>, а не на остистом отростке.</li>
+</ul>
+<div class="examples">
+  <figure><img src="{{IMG_EX_CRESTS}}" alt="Гребни подвздошных костей видны"><figcaption><b>Гребни видны</b> (стрелки): ставим точки 7 и 8 на самые высокие точки гребней.</figcaption></figure>
+  <figure><img src="{{IMG_EX_NOCRESTS}}" alt="Гребни не попали в кадр"><figcaption><b>Гребней в кадре нет</b>: точки 7 и 8 — «Нет на снимке».</figcaption></figure>
+</div>
+
+<h2 style="break-before: page">3. Бедро: 5 точек</h2>
+<figure>{{SVG_HIP}}</figure>
+<table>
+  <tr><th></th><th>Точка</th><th>Где ставить</th></tr>
+  <tr><td class="n">1</td><td><span class="dot" style="background:#ff6f91"></span>Центр головки</td><td>Центр окружности головки бедренной кости (мысленно впишите окружность в контур головки).</td></tr>
+  <tr><td class="n">2</td><td><span class="dot" style="background:#5cc8ff"></span>Середина шейки</td><td>Самое узкое место шейки — посередине между верхним и нижним её контуром.</td></tr>
+  <tr><td class="n">3</td><td><span class="dot" style="background:#c8e070"></span>Малый вертел — верхнее основание</td><td>Где контур малого вертела отходит от кортикального слоя диафиза (верхний край выступа).</td></tr>
+  <tr><td class="n">4</td><td><span class="dot" style="background:#f2c14e"></span>Малый вертел — вершина</td><td>Самая медиальная точка выступа малого вертела.</td></tr>
+  <tr><td class="n">5</td><td><span class="dot" style="background:#f0905a"></span>Малый вертел — нижнее основание</td><td>Где контур выступа возвращается к кортикальному слою диафиза (нижний край выступа).</td></tr>
+</table>
+<div class="note"><b>Малый вертел — главное на этих снимках.</b> Если выступ малого вертела за медиальный контур диафиза <b>хоть немного виден</b> — поставьте все три точки, даже если выступ маленький. «Нет на снимке» — только если медиальный контур диафиза ниже шейки ровный и выступа не видно. Кнопка <kbd>N</kbd> на любой из трёх точек вертела убирает сразу все три.</div>
+<div class="examples">
+  <figure><img src="{{IMG_EX_LT}}" alt="Выраженный выступ малого вертела"><figcaption><b>Выраженный выступ</b> малого вертела (стрелка). Медиальная сторона — со стороны головки.</figcaption></figure>
+  <figure><figcaption style="margin-top:0">Точки вертела, предложенные программой, бывают сдвинуты или слеплены в одну — разведите их по контуру кости. Если выступа нет совсем, отметьте «Нет на снимке» (<kbd>N</kbd>) на любой точке вертела.</figcaption></figure>
+</div>
+
+<h2 style="break-before: page">4. Трудные случаи</h2>
+<table>
+  <tr><th>Ситуация</th><th>Что делать</th></tr>
+  <tr><td>Эндопротез, металлоконструкция</td><td>Отметьте «Снимок нельзя разметить», причина — «Эндопротез или металлоконструкция».</td></tr>
+  <tr><td>Не та область или проекция</td><td>«Снимок нельзя разметить», причина — «Не та область или проекция».</td></tr>
+  <tr><td>Структура видна частично</td><td>Ставьте точку, если её положение можно определить. Если нет — «Нет на снимке».</td></tr>
+  <tr><td>Не уверены в положении или нумерации</td><td>Поставьте точки по лучшему суждению, отметьте «Сомневаюсь» (<kbd>D</kbd>) и коротко напишите почему.</td></tr>
+  <tr><td>Снимок тёмный или бледный</td><td>Регуляторы «Яркость» и «Контраст» внизу; «Сброс» возвращает исходный вид.</td></tr>
+  <tr><td>Ошиблись</td><td>«Отменить» (<kbd>Ctrl</kbd>+<kbd>Z</kbd>) или просто передвиньте точку. «Нет на снимке» отменяется повторным нажатием <kbd>N</kbd>.</td></tr>
+</table>
+
+<h2>5. Сохранение и сдача</h2>
+<ol>
+  <li>Работа сохраняется в браузере автоматически: можно закрыть файл и вернуться позже <b>на этом же компьютере и в этом же браузере</b>. Не открывайте файл в режиме «инкогнито» — там автосохранение не работает.</li>
+  <li>Когда закончите — и, пожалуйста, в конце каждого дня работы — нажмите <b>«Сохранить результат»</b>. В папке «Загрузки» появится файл вида <code>разметка_врач1_бедро_Иванова.json</code>.</li>
+  <li>Пришлите оба файла (позвоночник и бедро): <span class="fill">{{SEND_TO}}</span>, до <span class="fill">{{DEADLINE}}</span>.</li>
+  <li>Чтобы продолжить на другом компьютере, откройте тот же HTML-файл, нажмите «Открыть файл» и выберите сохранённый .json.</li>
+</ol>
+
+<h3>Горячие клавиши</h3>
+<table class="keys">
+  <tr><td><kbd>Enter</kbd></td><td>подтвердить точку и перейти к следующей; на размеченном снимке — следующий снимок</td></tr>
+  <tr><td><kbd>N</kbd></td><td>нет на снимке / вернуть точку</td></tr>
+  <tr><td><kbd>1</kbd>…<kbd>8</kbd>, <kbd>Tab</kbd></td><td>выбрать точку по номеру; следующая точка</td></tr>
+  <tr><td><kbd>←</kbd><kbd>→</kbd><kbd>↑</kbd><kbd>↓</kbd></td><td>сдвинуть точку; с <kbd>Shift</kbd> — сильнее</td></tr>
+  <tr><td>колесо мыши</td><td>увеличение; правая кнопка или пробел + перетаскивание — сдвиг снимка; <kbd>F</kbd> — вписать снимок</td></tr>
+  <tr><td><kbd>[</kbd> <kbd>]</kbd></td><td>предыдущий / следующий снимок</td></tr>
+  <tr><td><kbd>D</kbd></td><td>«Сомневаюсь»</td></tr>
+  <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd>, <kbd>Ctrl</kbd>+<kbd>S</kbd></td><td>отменить; сохранить результат в файл</td></tr>
+</table>
+
+<p>Вопросы: <span class="fill">{{CONTACT}}</span>. Спасибо за помощь!</p>
+</body>
+</html>

@@ -1,19 +1,29 @@
-"""Small local batch HTTP adapter; single worker bounds memory/CPU use."""
+"""Local HTTP server: the batch API (POST /v1/batch) and the web interface (GET /).
+
+A single model lock means one batch runs at a time, whether it came from the API or the page.
+"""
 from __future__ import annotations
 
 import json
 import tempfile
 import zipfile
-from http.server import BaseHTTPRequestHandler, HTTPServer
+import threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 from .api import analyze
+from .webui import JobStore, handle_ui
 
 MAX_UPLOAD = 512 * 1024 ** 2
 
 
-def handler_for(predictor):
+def handler_for(predictor, store=None, model_lock=None):
+    model_lock = model_lock or threading.Lock()
+
     class Handler(BaseHTTPRequestHandler):
+        def log_message(self, fmt, *args):  # polling would flood the console
+            pass
+
         def setup(self):
             super().setup()
             self.connection.settimeout(60)
@@ -26,13 +36,21 @@ def handler_for(predictor):
             self.end_headers()
             self.wfile.write(body)
 
+        def do_PUT(self):
+            if store is None or not handle_ui(self, store):
+                self.reply(404, {'error': 'not_found'})
+
         def do_GET(self):
+            if store is not None and handle_ui(self, store):
+                return
             if self.path == '/health':
                 self.reply(200, {'status': 'ok', 'model_id': getattr(predictor, 'model_id', None)})
             else:
                 self.reply(404, {'error': 'not_found'})
 
         def do_POST(self):
+            if store is not None and handle_ui(self, store):
+                return
             if self.path != '/v1/batch':
                 self.reply(404, {'error': 'not_found'})
                 return
@@ -54,7 +72,8 @@ def handler_for(predictor):
                                 raise ValueError('Incomplete request body')
                             output.write(chunk)
                             remaining -= len(chunk)
-                    rows, stats = analyze(path, predictor=predictor)
+                    with model_lock:
+                        rows, stats = analyze(path, predictor=predictor)
                 self.reply(200, {'rows': rows, 'summary': stats})
             except (ValueError, OSError, EOFError, zipfile.BadZipFile) as error:
                 self.reply(400, {'error': str(error)})
@@ -65,6 +84,17 @@ def handler_for(predictor):
 
 
 def serve(predictor, host='127.0.0.1', port=8080):
-    with HTTPServer((host, port), handler_for(predictor)) as server:
-        print(f'DXA QC API http://{host}:{server.server_port}; POST /v1/batch (application/zip)', flush=True)
-        server.serve_forever()
+    if hasattr(predictor, 'warm_up'):
+        print('DXA QC: загрузка моделей…', flush=True)
+        predictor.warm_up()
+    lock = threading.Lock()
+    store = JobStore(predictor, model_lock=lock)
+    with ThreadingHTTPServer((host, port), handler_for(predictor, store, lock)) as server:
+        server.daemon_threads = True
+        print(f'DXA QC: интерфейс http://{host}:{server.server_port}/  ·  API POST /v1/batch (application/zip)',
+              flush=True)
+        try:
+            server.serve_forever()
+        finally:
+            import shutil
+            shutil.rmtree(store.root, ignore_errors=True)   # uploaded studies never outlive the server

@@ -47,10 +47,9 @@ class PixelSpacing(unittest.TestCase):
 
 class ViewGate(unittest.TestCase):
     def test_gate_head_is_in_the_bundle_and_applies_to_a_raw_vector(self):
-        manifest_path = ROOT / 'models/release/manifest.json'
-        if not manifest_path.is_file():
-            self.skipTest('release bundle not present')
-        manifest = json.loads(manifest_path.read_text())
+        if not (ROOT / 'models/release/manifest.json').exists():
+            self.skipTest('model bundle not installed (it ships separately from Git)')
+        manifest = json.loads((ROOT / 'models/release/manifest.json').read_text())
         if 'view_gate' not in manifest:
             self.skipTest('view gate not exported')
         head = json.loads((ROOT / 'models/release' / manifest['view_gate']).read_text())
