@@ -67,13 +67,33 @@ curl -H 'Content-Type: application/zip' --data-binary @studies.zip http://127.0.
 
 ## Готовый образ для сдачи
 
-Актуальный образ (сборка 2026-09-21, коммит `d8fa738`: веб-интерфейс, коррекция врачом, DICOM SR): `outputs/release_image/dxaqc_amd64.tar.gz`, 1.06 GB (SHA-256 `76b3f09c…`), SHA-256 в `outputs/release_image/SHA256SUMS`. В нём уже есть зависимости и выбранные веса; интернет на целевой машине не нужен ни для сборки, ни для запуска:
+Для Linux x86_64 используется архив `dxaqc_amd64.tar.gz` из комплекта поставки. Он содержит зависимости и выбранные веса модели. Версия архива определяется фактическим комплектом поставки и его контрольной суммой.
 
-```sh
-gunzip -c dxaqc_amd64.tar.gz | docker load
-DXAQC_IMAGE=dxaqc:amd64 ./scripts/run.sh /absolute/studies.zip /absolute/out/result.csv
-```
+Перед загрузкой сравните SHA-256 скачанного архива со значением в сопроводительном файле `SHA256-образ.txt`:
 
-Это страховка на случай, если при сборке у организатора нет доступа к PyPI и download.pytorch.org: `./scripts/build.sh` на Linux x86_64 соберёт тот же образ из исходников. Старый `outputs/dist/dxaqc-image-linux-amd64.tar` собран до исправлений обработки входа и заменён новым.
+~~~sh
+sha256sum dxaqc_amd64.tar.gz
+docker load -i dxaqc_amd64.tar.gz
+~~~
 
-Для Linux с работающими bind mounts можно использовать `run.sh` с тем же `DXAQC_IMAGE`. Для arm64 создан локальный образ `dxaqc:local`. Запуск x86_64 на Apple Silicon использует эмуляцию, поэтому его время нельзя переносить на целевую машину.
+Для комплекта, описанного в README, ожидается тег `dxaqc:local`. Команда `docker load` выводит фактически загруженный тег. Проверьте платформу образа:
+
+~~~sh
+docker image inspect dxaqc:local --format '{{.Os}}/{{.Architecture}}'
+~~~
+
+Для целевой машины ожидается `linux/amd64`. Затем запустите обработку:
+
+~~~sh
+./scripts/run.sh /absolute/studies.zip /absolute/out/result.csv
+~~~
+
+Если команда `docker load` сообщает другой тег, укажите фактический тег через `DXAQC_IMAGE` при запуске `scripts/run.sh` или `scripts/run-ui.sh`.
+
+Для запуска готового образа интернет не требуется. Сборка из исходников требует полного комплекта весов в `models/release/` и доступа к базовому Docker-образу и закреплённым Python-зависимостям:
+
+~~~sh
+./scripts/build.sh --platform linux/amd64
+~~~
+
+Для arm64 образ собирается отдельно. Исполнение x86_64 на Apple Silicon использует эмуляцию; его время не характеризует скорость на целевой x86_64-машине. Состав поставки и основные команды описаны также в [проектной документации](PROJECT_DOCUMENTATION.md).
